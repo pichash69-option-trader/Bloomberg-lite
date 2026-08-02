@@ -51,6 +51,11 @@ def get_settings() -> Settings:
 # Universe — NIFTY 50 index + 50 constituent stocks (symbols as NSE uses them).
 # NSE rebalances ~twice a year; verify from the official factsheet if you need it
 # exact for a given date. All 50 are F&O stocks (each has futures + options).
+#
+# Updated for Aug-2026 composition (documented reconstitutions applied):
+#   Sept-2024: LTIM  → out;   BEL       → in
+#   Sept-2025: HEROMOTOCO, INDUSINDBK → out;   INDIGO, MAXHEALTH → in
+#   Tata Motors demerger: TATAMOTORS → TMPV (F&O-active successor)
 # --------------------------------------------------------------------------- #
 NIFTY_INDEX = "NIFTY 50"
 
@@ -59,12 +64,12 @@ NIFTY50 = [
     "BHARTIARTL", "SBIN", "LT", "ITC", "HINDUNILVR",
     "BAJFINANCE", "KOTAKBANK", "AXISBANK", "HCLTECH", "MARUTI",
     "SUNPHARMA", "M&M", "TITAN", "NTPC", "ULTRACEMCO",
-    "ASIANPAINT", "POWERGRID", "TATAMOTORS", "ADANIENT", "WIPRO",
+    "ASIANPAINT", "POWERGRID", "TMPV", "ADANIENT", "WIPRO",
     "JSWSTEEL", "NESTLEIND", "BAJAJFINSV", "ONGC", "TATASTEEL",
     "COALINDIA", "ADANIPORTS", "HDFCLIFE", "GRASIM", "SBILIFE",
     "TECHM", "BAJAJ-AUTO", "HINDALCO", "DRREDDY", "CIPLA",
-    "BRITANNIA", "EICHERMOT", "APOLLOHOSP", "INDUSINDBK", "TATACONSUM",
-    "BPCL", "SHRIRAMFIN", "HEROMOTOCO", "LTIM", "TRENT",
+    "BRITANNIA", "EICHERMOT", "APOLLOHOSP", "BEL", "TATACONSUM",
+    "BPCL", "SHRIRAMFIN", "INDIGO", "MAXHEALTH", "TRENT",
 ]
 
 # Full underlying list (index first), used for history backfill + the picker.
