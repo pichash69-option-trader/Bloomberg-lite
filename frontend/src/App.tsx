@@ -38,7 +38,16 @@ export default function App() {
       getJSON<History>(`/history?symbol=${encodeURIComponent(selected!)}&interval=1d`),
     enabled: !!selected,
   })
-  const latest = hist.data?.candles.at(-1)
+  const candles = hist.data?.candles ?? []
+  const latest = candles.at(-1)
+  const prevClose = candles.length > 1 ? candles[candles.length - 2].close : null
+  const last252 = candles.slice(-252)
+  const hi52 = last252.length ? Math.max(...last252.map((c) => c.high)) : null
+  const lo52 = last252.length ? Math.min(...last252.map((c) => c.low)) : null
+  const vols = last252.map((c) => c.volume).filter((v): v is number => v != null)
+  const avgVol = vols.length
+    ? Math.round(vols.reduce((a, b) => a + b, 0) / vols.length)
+    : null
 
   return (
     <div className="flex h-full flex-col">
@@ -151,6 +160,23 @@ export default function App() {
                     key={k}
                     className="rounded-lg border border-border bg-panel p-4"
                   >
+                    <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                      {k}
+                    </div>
+                    <div className="mt-1 font-mono text-lg text-slate-300">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Second row — computed stats */}
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {[
+                  ['Prev Close', fmt(prevClose)],
+                  ['52W High', fmt(hi52)],
+                  ['52W Low', fmt(lo52)],
+                  ['Avg Vol (52w)', avgVol == null ? '—' : avgVol.toLocaleString('en-IN')],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg border border-border bg-panel p-4">
                     <div className="text-[11px] uppercase tracking-wider text-slate-500">
                       {k}
                     </div>
