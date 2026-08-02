@@ -106,6 +106,16 @@ export type OptLive = {
   pe_buildup: string
   strikes: ChainRow[]
 }
+export type Analytics = {
+  expected_move: number
+  ci68: [number, number]
+  ci95: [number, number]
+  hist_vol_daily_pct: number
+  z_score: number
+  vwap_edge: number
+  fut_theo_premium: number
+  fut_fv_edge: number
+}
 export type LiveState = {
   symbol: string
   ts: string
@@ -113,4 +123,5 @@ export type LiveState = {
   cash: CashLive
   futures: FutLive
   options: OptLive
+  analytics: Analytics
 }

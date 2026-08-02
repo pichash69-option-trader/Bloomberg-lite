@@ -164,12 +164,51 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
   })
 
   if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
-  const { cash: c, futures: f, options: o } = live
+  const { cash: c, futures: f, options: o, analytics: a } = live
   const up = c.chg >= 0
   const atmRow = o.strikes.find((s) => s.strike === o.atm)
+  const zAbs = Math.abs(a?.z_score ?? 0)
+  const zCls = zAbs >= 2 ? 'text-down' : zAbs >= 1 ? 'text-yellow-400' : 'text-slate-300'
 
   return (
     <div>
+      {/* ============ ANALYTICS ============ */}
+      {a && (
+        <Section title="Analytics" tag="fair-value · stats · Quant Bible §2-3, §6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <Tile label="Expected Move (1d)">
+              <span className="text-slate-300">±{n(a.expected_move)}</span>
+            </Tile>
+            <Tile label="68% Range">
+              <span className="text-slate-300">{n(a.ci68[0])}–{n(a.ci68[1])}</span>
+            </Tile>
+            <Tile label="95% Range">
+              <span className="text-slate-300">{n(a.ci95[0])}–{n(a.ci95[1])}</span>
+            </Tile>
+            <Tile label="Move Z-score">
+              <span className={zCls}>
+                {signed(a.z_score)}σ {zAbs >= 2 ? '⚠' : ''}
+              </span>
+            </Tile>
+            <Tile label="Hist Vol (daily)">
+              <span className="text-slate-300">{a.hist_vol_daily_pct}%</span>
+            </Tile>
+            <Tile label="VWAP Edge">
+              <span className={a.vwap_edge >= 0 ? 'text-up' : 'text-down'}>{signed(a.vwap_edge)}</span>
+            </Tile>
+            <Tile label="Fut FV Edge">
+              <span className={a.fut_fv_edge >= 0 ? 'text-up' : 'text-down'}>
+                {signed(a.fut_fv_edge)} {a.fut_fv_edge >= 0 ? '(rich)' : '(cheap)'}
+              </span>
+            </Tile>
+          </div>
+          <p className="mt-1.5 px-1 text-[11px] text-slate-600">
+            Expected move &amp; ranges ATM-IV se · Z-score = aaj ka move hist daily-vol ke kitne σ
+            (|z|≥2 = extreme) · VWAP/FV edge = price vs fair value. Educational, advice nahi.
+          </p>
+        </Section>
+      )}
+
       {/* ============ CASH MARKET ============ */}
       <Section title="Cash Market" tag="Buy / Sell">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">

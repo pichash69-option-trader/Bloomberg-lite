@@ -10,6 +10,7 @@ payload from DhanHQ (WS Full + Option-Chain REST) behind this exact contract.
 """
 import asyncio
 import json
+import math
 import random
 from datetime import date, datetime, timedelta, timezone
 
@@ -23,6 +24,8 @@ from app.redis_store import get_redis
 
 TICK_SEC = 1.5
 STEP_SIGMA = 0.0009
+RISK_FREE = 0.065          # for futures fair-value (cost of carry)
+FUT_DAYS = 25              # ~days to near-month expiry (mock)
 
 
 async def _last_close(symbol: str) -> float:
@@ -32,6 +35,21 @@ async def _last_close(symbol: str) -> float:
             .order_by(Candle.ts.desc()).limit(1))
         val = row.scalar_one_or_none()
     return float(val) if val is not None else 1000.0
+
+
+async def _daily_stats(symbol: str) -> tuple[float, float]:
+    """(mean, std) of daily returns in % — for the current-move z-score."""
+    async with SessionLocal() as session:
+        rows = await session.execute(
+            select(Candle.close).where(Candle.symbol == symbol, Candle.interval == "1d")
+            .order_by(Candle.ts))
+        closes = [float(c) for c in rows.scalars()]
+    rets = [(closes[i] / closes[i - 1] - 1) * 100 for i in range(1, len(closes))]
+    if len(rets) < 5:
+        return 0.0, 1.0
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+    return mean, math.sqrt(var) or 1.0
 
 
 def _atm_greeks(chain: dict):
@@ -75,6 +93,7 @@ class MockFeed:
         redis = get_redis()
         rng = random.Random(hash(symbol) & 0xFFFFFFFF)
         prev_close = await _last_close(symbol)
+        mean_daily, std_daily = await _daily_stats(symbol)
         spot = prev_close
         day_open = prev_close
         hi = lo = prev_close
@@ -120,6 +139,24 @@ class MockFeed:
                 prev_ce_oi, prev_pe_oi = ce_oi, pe_oi
                 atm_iv, atm_ce_d, atm_pe_d = _atm_greeks(chain)
 
+                # --- Analytics (Quant Bible §6 fair-value / §2-3 stats) ---
+                atp_cash = round((hi + lo + spot) / 3, 2)
+                iv = atm_iv / 100.0
+                em = spot * iv * math.sqrt(1 / 252)            # 1-day expected move (from IV)
+                chg_pct_now = (spot - prev_close) / prev_close * 100
+                z = (chg_pct_now - mean_daily) / std_daily
+                theo_prem = spot * RISK_FREE * FUT_DAYS / 365   # cost-of-carry fair premium
+                analytics = {
+                    "expected_move": round(em, 2),
+                    "ci68": [round(spot - em, 2), round(spot + em, 2)],
+                    "ci95": [round(spot - 1.96 * em, 2), round(spot + 1.96 * em, 2)],
+                    "hist_vol_daily_pct": round(std_daily, 2),
+                    "z_score": round(z, 2),
+                    "vwap_edge": round(spot - atp_cash, 2),
+                    "fut_theo_premium": round(theo_prem, 2),
+                    "fut_fv_edge": round(premium - theo_prem, 2),
+                }
+
                 payload = {
                     "symbol": symbol,
                     "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -127,7 +164,7 @@ class MockFeed:
                     "cash": {
                         "ltp": round(spot, 2),
                         "last_qty": rng.randint(1, 800),
-                        "atp": round((hi + lo + spot) / 3, 2),
+                        "atp": atp_cash,
                         "prev_close": round(prev_close, 2),
                         "chg": round(spot - prev_close, 2),
                         "chg_pct": round((spot - prev_close) / prev_close * 100, 2),
@@ -184,6 +221,7 @@ class MockFeed:
                         "pe_buildup": classify_buildup(d_price, pe_chg),
                         "strikes": chain["strikes"],
                     },
+                    "analytics": analytics,
                 }
                 data = json.dumps(payload)
                 await redis.hset(f"live:{symbol}", mapping={"data": data})
