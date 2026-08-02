@@ -89,6 +89,69 @@ function DepthLadder({ depth }: { depth: DepthLevel[] }) {
   )
 }
 
+// Market-microstructure from the depth ladder (grounded in Quant Bible §6).
+function Micro({ depth }: { depth: DepthLevel[] }) {
+  if (!depth?.length) return null
+  const bidQty = depth.reduce((s, d) => s + d.bid_qty, 0)
+  const askQty = depth.reduce((s, d) => s + d.ask_qty, 0)
+  const ofi = (bidQty - askQty) / (bidQty + askQty || 1) // −1 sell … +1 buy
+  const bestBid = depth[0].bid_price
+  const bestAsk = depth[0].ask_price
+  const bb = depth[0].bid_qty
+  const ba = depth[0].ask_qty
+  const mid = (bestBid + bestAsk) / 2
+  const spreadBps = mid ? ((bestAsk - bestBid) / mid) * 10000 : 0
+  // Micro-price: order-flow-weighted fair value (leans toward heavier book side).
+  const micro = bb + ba ? (bestBid * ba + bestAsk * bb) / (bb + ba) : mid
+  const lean = micro > mid ? 'up' : micro < mid ? 'down' : 'flat'
+
+  return (
+    <div className="rounded-lg border border-border bg-panel p-3">
+      <div className="mb-1.5 text-[10px] uppercase tracking-wider text-slate-500">
+        Order-flow &amp; microstructure (5-lvl)
+      </div>
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-down">Sell</span>
+        <span className={`font-mono ${ofi >= 0 ? 'text-up' : 'text-down'}`}>
+          OFI {ofi >= 0 ? '+' : ''}
+          {ofi.toFixed(2)}
+        </span>
+        <span className="text-up">Buy</span>
+      </div>
+      <div className="relative mt-1 h-2 rounded-full bg-white/5">
+        <div className="absolute left-1/2 top-0 h-full w-px bg-slate-600" />
+        <div
+          className={`absolute top-0 h-full ${ofi >= 0 ? 'bg-up' : 'bg-down'}`}
+          style={{
+            left: ofi >= 0 ? '50%' : `${50 + ofi * 50}%`,
+            width: `${Math.abs(ofi) * 50}%`,
+          }}
+        />
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-xs">
+        <div>
+          <div className="text-[9px] uppercase text-slate-500">Spread</div>
+          <span className="text-slate-300">{spreadBps.toFixed(1)} bps</span>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase text-slate-500">Mid</div>
+          <span className="text-slate-300">{n(mid)}</span>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase text-slate-500">Micro-price</div>
+          <span className="text-slate-300">{n(micro)}</span>
+        </div>
+        <div>
+          <div className="text-[9px] uppercase text-slate-500">Lean</div>
+          <span className={lean === 'up' ? 'text-up' : lean === 'down' ? 'text-down' : 'text-slate-400'}>
+            {lean === 'up' ? '▲ up' : lean === 'down' ? '▼ down' : 'flat'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function LiveTerminal({ live }: { live: LiveState | null }) {
   const [depthStrike, setDepthStrike] = useState<number | null>(null)
   const depthQ = useQuery({
@@ -162,6 +225,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             <DepthLadder depth={c.depth} />
           </div>
         </div>
+        <div className="mt-3">
+          <Micro depth={c.depth} />
+        </div>
       </Section>
 
       {/* ============ FUTURES ============ */}
@@ -224,6 +290,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             </div>
             <DepthLadder depth={f.depth} />
           </div>
+        </div>
+        <div className="mt-3">
+          <Micro depth={f.depth} />
         </div>
       </Section>
 
