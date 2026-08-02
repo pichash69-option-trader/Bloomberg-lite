@@ -16,6 +16,7 @@ from sqlalchemy import select, text
 from app import db, redis_store
 from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
+from app.dhan_config import mode as data_mode
 from app.mock_feed import feed
 from app.models import Candle
 
@@ -66,7 +67,7 @@ async def health():
     except Exception:
         pass
     status = "ok" if (db_ok and redis_ok) else "degraded"
-    return {"status": status, "db": db_ok, "redis": redis_ok}
+    return {"status": status, "db": db_ok, "redis": redis_ok, "mode": data_mode()}
 
 
 @app.get("/universe")

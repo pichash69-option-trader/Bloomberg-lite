@@ -131,7 +131,7 @@ export default function App() {
                       live ? 'animate-pulse bg-up' : 'bg-slate-600'
                     }`}
                   />
-                  {live ? 'LIVE · mock' : 'connecting…'}
+                  {live ? `LIVE · ${health.data?.mode ?? 'mock'}` : 'connecting…'}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
