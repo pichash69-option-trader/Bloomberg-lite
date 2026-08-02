@@ -36,6 +36,9 @@ export type Live = {
   mock: boolean
 }
 
+export type Mover = { symbol: string; last: number; chg_pct: number }
+export type Movers = { gainers: Mover[]; losers: Mover[] }
+
 export type OptionLeg = {
   ltp: number
   oi: number

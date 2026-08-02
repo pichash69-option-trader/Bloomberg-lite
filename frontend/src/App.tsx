@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Chain, type Health, type History, type Universe } from './api'
 import HistoryTable from './components/HistoryTable'
 import ChainTable from './components/ChainTable'
+import MoversBar from './components/MoversBar'
 import { useLive } from './hooks/useLive'
 
 function fmt(n: number | null | undefined): string {
@@ -86,6 +87,9 @@ export default function App() {
           </span>
         </div>
       </header>
+
+      {/* Movers strip */}
+      <MoversBar onSelect={setSelected} />
 
       {/* Body */}
       <div className="flex min-h-0 flex-1">

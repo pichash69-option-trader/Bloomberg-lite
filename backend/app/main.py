@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import (FastAPI, HTTPException, Query, WebSocket,
                      WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app import db, redis_store
 from app.chain import build_chain
@@ -95,6 +95,36 @@ async def history(symbol: str = Query(...), interval: str = Query("1d")):
         raise HTTPException(404, f"No {interval} history for {symbol}")
     return {"symbol": symbol, "interval": interval,
             "count": len(candles), "candles": candles}
+
+
+@app.get("/movers")
+async def movers(limit: int = 6):
+    """Top gainers/losers across the 50 stocks (latest daily close vs previous)."""
+    sql = text("""
+        WITH ranked AS (
+            SELECT symbol, close,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY ts DESC) AS rn
+            FROM candles
+            WHERE interval = '1d' AND segment = 'NSE_EQ'
+        )
+        SELECT symbol,
+               MAX(close) FILTER (WHERE rn = 1) AS last,
+               MAX(close) FILTER (WHERE rn = 2) AS prev
+        FROM ranked WHERE rn <= 2 GROUP BY symbol
+    """)
+    async with db.SessionLocal() as session:
+        rows = (await session.execute(sql)).all()
+
+    items = []
+    for sym, last, prev in rows:
+        if last is not None and prev:
+            items.append({
+                "symbol": sym,
+                "last": round(float(last), 2),
+                "chg_pct": round((float(last) - float(prev)) / float(prev) * 100, 2),
+            })
+    items.sort(key=lambda x: x["chg_pct"], reverse=True)
+    return {"gainers": items[:limit], "losers": list(reversed(items[-limit:]))}
 
 
 @app.get("/chain")
