@@ -7,13 +7,15 @@ import MoversBar from './components/MoversBar'
 import ChargesCalc from './components/ChargesCalc'
 import PayoffBuilder from './components/PayoffBuilder'
 import StatsTable from './components/StatsTable'
+import RiskCalc from './components/RiskCalc'
 import { useLive } from './hooks/useLive'
 
-type View = 'terminal' | 'payoff' | 'stats' | 'charges'
+type View = 'terminal' | 'payoff' | 'stats' | 'charges' | 'risk'
 const NAV: { key: View; label: string }[] = [
   { key: 'terminal', label: 'Terminal' },
   { key: 'payoff', label: 'Payoff' },
   { key: 'stats', label: 'Stats' },
+  { key: 'risk', label: 'Risk' },
   { key: 'charges', label: 'Charges' },
 ]
 
@@ -209,6 +211,8 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-y-auto p-6">
           {view === 'charges' ? (
             <ChargesCalc />
+          ) : view === 'risk' ? (
+            <RiskCalc />
           ) : view === 'payoff' ? (
             <PayoffBuilder chain={chain} symbol={selected} />
           ) : view === 'stats' ? (
