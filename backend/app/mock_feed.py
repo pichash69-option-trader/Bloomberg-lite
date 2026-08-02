@@ -52,6 +52,31 @@ async def _daily_stats(symbol: str) -> tuple[float, float]:
     return mean, math.sqrt(var) or 1.0
 
 
+async def _beta(symbol: str) -> float:
+    """Beta of the stock vs NIFTY 50 (daily returns, aligned by date)."""
+    async with SessionLocal() as session:
+        srows = (await session.execute(
+            select(Candle.ts, Candle.close).where(
+                Candle.symbol == symbol, Candle.interval == "1d").order_by(Candle.ts))).all()
+        nrows = (await session.execute(
+            select(Candle.ts, Candle.close).where(
+                Candle.symbol == "NIFTY 50", Candle.interval == "1d").order_by(Candle.ts))).all()
+    smap = {ts.date(): float(c) for ts, c in srows}
+    nmap = {ts.date(): float(c) for ts, c in nrows}
+    dates = sorted(set(smap) & set(nmap))
+    if len(dates) < 10:
+        return 1.0
+    s = [smap[d] for d in dates]
+    ni = [nmap[d] for d in dates]
+    sret = [s[i] / s[i - 1] - 1 for i in range(1, len(s))]
+    nret = [ni[i] / ni[i - 1] - 1 for i in range(1, len(ni))]
+    nmean = sum(nret) / len(nret)
+    smean = sum(sret) / len(sret)
+    cov = sum((sret[i] - smean) * (nret[i] - nmean) for i in range(len(sret))) / len(sret)
+    var = sum((x - nmean) ** 2 for x in nret) / len(nret)
+    return round(cov / var, 2) if var else 1.0
+
+
 def _atm_greeks(chain: dict):
     for s in chain["strikes"]:
         if s["strike"] == chain["atm"]:
@@ -94,6 +119,8 @@ class MockFeed:
         rng = random.Random(hash(symbol) & 0xFFFFFFFF)
         prev_close = await _last_close(symbol)
         mean_daily, std_daily = await _daily_stats(symbol)
+        beta = await _beta(symbol)
+        cum_flow = 0
         spot = prev_close
         day_open = prev_close
         hi = lo = prev_close
@@ -115,6 +142,7 @@ class MockFeed:
                 # --- Cash market (buy/sell pressure) ---
                 tick_vol = rng.randint(2000, 60000)
                 volume += tick_vol
+                cum_flow += tick_vol if d_price >= 0 else -tick_vol   # net aggressive flow
                 bias = 0.5 + (0.25 if d_price > 0 else -0.25) + rng.uniform(-0.1, 0.1)
                 bias = min(0.9, max(0.1, bias))
                 buy_qty = int(tick_vol * 8 * bias)
@@ -146,12 +174,17 @@ class MockFeed:
                 chg_pct_now = (spot - prev_close) / prev_close * 100
                 z = (chg_pct_now - mean_daily) / std_daily
                 theo_prem = spot * RISK_FREE * FUT_DAYS / 365   # cost-of-carry fair premium
+                realized_vol_ann = std_daily * math.sqrt(252)   # annualised realised vol %
                 analytics = {
                     "expected_move": round(em, 2),
                     "ci68": [round(spot - em, 2), round(spot + em, 2)],
                     "ci95": [round(spot - 1.96 * em, 2), round(spot + 1.96 * em, 2)],
                     "hist_vol_daily_pct": round(std_daily, 2),
                     "z_score": round(z, 2),
+                    "beta": beta,
+                    "realized_vol": round(realized_vol_ann, 2),
+                    "implied_vol": atm_iv,
+                    "vol_premium": round(atm_iv - realized_vol_ann, 2),
                     "vwap_edge": round(spot - atp_cash, 2),
                     "fut_theo_premium": round(theo_prem, 2),
                     "fut_fv_edge": round(premium - theo_prem, 2),
@@ -180,6 +213,7 @@ class MockFeed:
                         "spread": spread,
                         "upper_circuit": round(prev_close * 1.1, 2),
                         "lower_circuit": round(prev_close * 0.9, 2),
+                        "cum_flow": cum_flow,
                         "depth": _depth(spot, spread, tick_px, rng),
                     },
                     "futures": {
@@ -205,6 +239,10 @@ class MockFeed:
                     "options": {
                         "pcr": chain["pcr"],
                         "max_pain": chain["max_pain"],
+                        "max_pain_dist": round(spot - chain["max_pain"], 2),
+                        "ce_wall": chain["ce_wall"],
+                        "pe_wall": chain["pe_wall"],
+                        "iv_rank": chain["iv_rank"],
                         "atm": chain["atm"],
                         "expiries": opt_expiries,
                         "total_ce_oi": int(ce_oi),

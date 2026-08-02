@@ -126,6 +126,13 @@ def synth_chain(symbol: str, spot: float) -> dict:
     net_gamma = round(sum((s["ce"]["oi"] + s["pe"]["oi"]) * s["ce"]["gamma"]
                           for s in strikes))
 
+    # OI walls: highest-OI strikes act as resistance (CE) / support (PE).
+    ce_wall = max(strikes, key=lambda s: s["ce"]["oi"])["strike"]
+    pe_wall = max(strikes, key=lambda s: s["pe"]["oi"])["strike"]
+    atm_iv_pct = next((s["ce"]["iv"] for s in strikes if s["strike"] == atm), 20.0)
+    # IV rank: where ATM IV sits in a plausible band (real = vs IV history).
+    iv_rank = round(min(100.0, max(0.0, (atm_iv_pct - 12) / (45 - 12) * 100)), 0)
+
     return {
         "symbol": symbol,
         "spot": round(spot, 2),
@@ -139,6 +146,9 @@ def synth_chain(symbol: str, spot: float) -> dict:
         "iv_skew": iv_skew,
         "net_delta": net_delta,
         "net_gamma": net_gamma,
+        "ce_wall": ce_wall,
+        "pe_wall": pe_wall,
+        "iv_rank": iv_rank,
         "strikes": strikes,
         "mock": True,
     }

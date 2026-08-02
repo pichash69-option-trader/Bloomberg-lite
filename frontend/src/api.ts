@@ -71,6 +71,7 @@ export type CashLive = {
   spread: number
   upper_circuit: number
   lower_circuit: number
+  cum_flow: number
   depth: DepthLevel[]
 }
 export type FutLive = {
@@ -90,6 +91,10 @@ export type FutLive = {
 export type OptLive = {
   pcr: number
   max_pain: number
+  max_pain_dist: number
+  ce_wall: number
+  pe_wall: number
+  iv_rank: number
   atm: number
   expiries: string[]
   total_ce_oi: number
@@ -112,6 +117,10 @@ export type Analytics = {
   ci95: [number, number]
   hist_vol_daily_pct: number
   z_score: number
+  beta: number
+  realized_vol: number
+  implied_vol: number
+  vol_premium: number
   vwap_edge: number
   fut_theo_premium: number
   fut_fv_edge: number

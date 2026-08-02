@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type DepthLevel, type LiveState, type OptDepth } from '../api'
 
@@ -163,10 +163,26 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
     enabled: !!live && depthStrike != null,
   })
 
+  // Buildup timeline: log futures-buildup changes over the session.
+  const [buildupLog, setBuildupLog] = useState<{ t: string; b: string }[]>([])
+  useEffect(() => {
+    setBuildupLog([])
+  }, [live?.symbol])
+  useEffect(() => {
+    if (!live) return
+    const b = live.futures.buildup
+    setBuildupLog((log) =>
+      log.length && log[log.length - 1].b === b
+        ? log
+        : [...log.slice(-11), { t: live.ts.slice(11, 19), b }],
+    )
+  }, [live?.symbol, live?.futures.buildup])
+
   if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
   const { cash: c, futures: f, options: o, analytics: a } = live
   const up = c.chg >= 0
   const atmRow = o.strikes.find((s) => s.strike === o.atm)
+  const maxOi = Math.max(...(o.strikes ?? []).flatMap((s) => [s.ce.oi, s.pe.oi]), 1)
   const zAbs = Math.abs(a?.z_score ?? 0)
   const zCls = zAbs >= 2 ? 'text-down' : zAbs >= 1 ? 'text-yellow-400' : 'text-slate-300'
 
@@ -199,6 +215,20 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             <Tile label="Fut FV Edge">
               <span className={a.fut_fv_edge >= 0 ? 'text-up' : 'text-down'}>
                 {signed(a.fut_fv_edge)} {a.fut_fv_edge >= 0 ? '(rich)' : '(cheap)'}
+              </span>
+            </Tile>
+            <Tile label="Beta (vs NIFTY)">
+              <span className="text-slate-300">{a.beta}</span>
+            </Tile>
+            <Tile label="Realized Vol">
+              <span className="text-slate-300">{a.realized_vol}%</span>
+            </Tile>
+            <Tile label="Implied Vol">
+              <span className="text-slate-300">{a.implied_vol}%</span>
+            </Tile>
+            <Tile label="Vol Premium">
+              <span className={a.vol_premium >= 0 ? 'text-up' : 'text-down'}>
+                {signed(a.vol_premium)} {a.vol_premium >= 0 ? '(rich)' : '(cheap)'}
               </span>
             </Tile>
           </div>
@@ -237,6 +267,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
               <span className="text-up">{n(c.upper_circuit)}</span> /{' '}
               <span className="text-down">{n(c.lower_circuit)}</span>
             </span>
+          </Tile>
+          <Tile label="Cumulative Flow">
+            <span className={c.cum_flow >= 0 ? 'text-up' : 'text-down'}>{signed(c.cum_flow)}</span>
           </Tile>
         </div>
 
@@ -333,6 +366,23 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
         <div className="mt-3">
           <Micro depth={f.depth} />
         </div>
+        {buildupLog.length > 0 && (
+          <div className="mt-3">
+            <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-slate-500">
+              Buildup timeline (session)
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {buildupLog.map((e, i) => (
+                <span
+                  key={i}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${buildupCls(e.b)}`}
+                >
+                  {e.t} {e.b}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </Section>
 
       {/* ============ OPTIONS ============ */}
@@ -358,6 +408,20 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           </Tile>
           <Tile label="Net Γ">
             <span className="text-slate-300">{oi(o.net_gamma)}</span>
+          </Tile>
+          <Tile label="Resistance (CE wall)">
+            <span className="text-down">{n(o.ce_wall, 0)}</span>
+          </Tile>
+          <Tile label="Support (PE wall)">
+            <span className="text-up">{n(o.pe_wall, 0)}</span>
+          </Tile>
+          <Tile label="IV Rank">
+            <span className="text-slate-300">{o.iv_rank}</span>
+          </Tile>
+          <Tile label="Max-Pain Dist">
+            <span className={o.max_pain_dist >= 0 ? 'text-up' : 'text-down'}>
+              {signed(o.max_pain_dist)}
+            </span>
           </Tile>
         </div>
 
@@ -406,7 +470,13 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
                     <td className={`px-2 py-1 ${s.ce.chg_oi >= 0 ? 'text-up' : 'text-down'}`}>
                       {signed(s.ce.chg_oi)}
                     </td>
-                    <td className="px-2 py-1 text-slate-400">{oi(s.ce.oi)}</td>
+                    <td className="relative px-2 py-1 text-slate-400">
+                      <span
+                        className="absolute inset-y-0 right-0 bg-up/10"
+                        style={{ width: `${(s.ce.oi / maxOi) * 100}%` }}
+                      />
+                      <span className="relative">{oi(s.ce.oi)}</span>
+                    </td>
                     <td className="px-2 py-1 text-up">{n(s.ce.ltp)}</td>
                     <td className="px-2 py-1 text-center">
                       <button
@@ -424,7 +494,13 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
                       </button>
                     </td>
                     <td className="px-2 py-1 text-down">{n(s.pe.ltp)}</td>
-                    <td className="px-2 py-1 text-slate-400">{oi(s.pe.oi)}</td>
+                    <td className="relative px-2 py-1 text-slate-400">
+                      <span
+                        className="absolute inset-y-0 left-0 bg-down/10"
+                        style={{ width: `${(s.pe.oi / maxOi) * 100}%` }}
+                      />
+                      <span className="relative">{oi(s.pe.oi)}</span>
+                    </td>
                     <td className={`px-2 py-1 ${s.pe.chg_oi >= 0 ? 'text-up' : 'text-down'}`}>
                       {signed(s.pe.chg_oi)}
                     </td>
