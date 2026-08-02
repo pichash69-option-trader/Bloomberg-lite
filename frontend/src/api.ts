@@ -39,6 +39,15 @@ export type Live = {
 export type Mover = { symbol: string; last: number; chg_pct: number }
 export type Movers = { gainers: Mover[]; losers: Mover[] }
 
+export type Position = {
+  id: number
+  symbol: string
+  side: 'buy' | 'sell'
+  qty: number
+  entry: number
+  ts: string
+}
+
 export type Stat = {
   symbol: string
   last: number

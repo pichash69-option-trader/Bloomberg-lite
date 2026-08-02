@@ -9,15 +9,18 @@ import PayoffBuilder from './components/PayoffBuilder'
 import StatsTable from './components/StatsTable'
 import RiskCalc from './components/RiskCalc'
 import Compare from './components/Compare'
+import PaperView from './components/PaperView'
+import { type Position } from './api'
 import { useLive } from './hooks/useLive'
 
-type View = 'terminal' | 'payoff' | 'stats' | 'compare' | 'risk' | 'charges'
+type View = 'terminal' | 'payoff' | 'stats' | 'compare' | 'risk' | 'charges' | 'paper'
 const NAV: { key: View; label: string }[] = [
   { key: 'terminal', label: 'Terminal' },
   { key: 'payoff', label: 'Payoff' },
   { key: 'stats', label: 'Stats' },
   { key: 'compare', label: 'Compare' },
   { key: 'risk', label: 'Risk' },
+  { key: 'paper', label: 'Paper' },
   { key: 'charges', label: 'Charges' },
 ]
 
@@ -56,6 +59,23 @@ export default function App() {
     setSelected(s)
     setView('terminal')
   }
+
+  const [paper, setPaper] = useState<Position[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('paper') || '[]')
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem('paper', JSON.stringify(paper))
+  }, [paper])
+  const [orderQty, setOrderQty] = useState(50)
+  const placeOrder = (side: 'buy' | 'sell', symbol: string, price: number) =>
+    setPaper((p) => [
+      ...p,
+      { id: Date.now(), symbol, side, qty: orderQty, entry: price, ts: new Date().toISOString() },
+    ])
 
   const health = useQuery({
     queryKey: ['health'],
@@ -217,6 +237,12 @@ export default function App() {
             <RiskCalc />
           ) : view === 'compare' ? (
             <Compare />
+          ) : view === 'paper' ? (
+            <PaperView
+              positions={paper}
+              onClose={(id) => setPaper((p) => p.filter((x) => x.id !== id))}
+              onClear={() => setPaper([])}
+            />
           ) : view === 'payoff' ? (
             <PayoffBuilder chain={chain} symbol={selected} />
           ) : view === 'stats' ? (
@@ -239,6 +265,44 @@ export default function App() {
                   {live ? `LIVE · ${health.data?.mode ?? 'mock'}` : 'connecting…'}
                 </span>
               </div>
+
+              {/* Paper trade widget */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-panel/60 px-3 py-2 text-sm">
+                <span className="text-[11px] uppercase tracking-wider text-slate-500">
+                  Paper trade
+                </span>
+                <span className="text-slate-500">Qty</span>
+                <input
+                  type="number"
+                  value={orderQty}
+                  min={1}
+                  onChange={(e) => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-20 rounded border border-border bg-black/30 px-2 py-1 font-mono text-xs text-slate-200 outline-none focus:border-indigo"
+                />
+                <button
+                  disabled={!live}
+                  onClick={() => live && placeOrder('buy', selected, live.ltp)}
+                  className="rounded bg-up/15 px-3 py-1 text-xs font-semibold text-up hover:bg-up/25 disabled:opacity-40"
+                >
+                  Buy @ {live ? live.ltp.toFixed(2) : '—'}
+                </button>
+                <button
+                  disabled={!live}
+                  onClick={() => live && placeOrder('sell', selected, live.ltp)}
+                  className="rounded bg-down/15 px-3 py-1 text-xs font-semibold text-down hover:bg-down/25 disabled:opacity-40"
+                >
+                  Sell @ {live ? live.ltp.toFixed(2) : '—'}
+                </button>
+                {paper.length > 0 && (
+                  <button
+                    onClick={() => setView('paper')}
+                    className="ml-auto text-xs text-indigo hover:underline"
+                  >
+                    {paper.length} position(s) →
+                  </button>
+                )}
+              </div>
+
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {/* LTP — live */}
                 <div className="rounded-lg border border-border bg-panel p-4">
