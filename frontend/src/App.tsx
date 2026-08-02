@@ -4,7 +4,14 @@ import { getJSON, type Chain, type Health, type History, type Universe } from '.
 import HistoryTable from './components/HistoryTable'
 import ChainTable from './components/ChainTable'
 import MoversBar from './components/MoversBar'
+import ChargesCalc from './components/ChargesCalc'
 import { useLive } from './hooks/useLive'
+
+type View = 'terminal' | 'charges'
+const NAV: { key: View; label: string }[] = [
+  { key: 'terminal', label: 'Terminal' },
+  { key: 'charges', label: 'Charges' },
+]
 
 function fmt(n: number | null | undefined): string {
   return n == null
@@ -23,6 +30,7 @@ function Dot({ ok }: { ok: boolean }) {
 
 export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
+  const [view, setView] = useState<View>('terminal')
 
   const health = useQuery({
     queryKey: ['health'],
@@ -76,6 +84,21 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs">
+          <nav className="flex items-center gap-1">
+            {NAV.map((n) => (
+              <button
+                key={n.key}
+                onClick={() => setView(n.key)}
+                className={`rounded px-3 py-1 ${
+                  view === n.key
+                    ? 'bg-indigo/20 text-indigo'
+                    : 'text-slate-400 hover:bg-white/5'
+                }`}
+              >
+                {n.label}
+              </button>
+            ))}
+          </nav>
           <span className="flex items-center gap-1.5">
             <Dot ok={!!health.data?.db} /> DB
           </span>
@@ -121,7 +144,9 @@ export default function App() {
 
         {/* Main panel */}
         <main className="min-w-0 flex-1 overflow-y-auto p-6">
-          {selected ? (
+          {view === 'charges' ? (
+            <ChargesCalc />
+          ) : selected ? (
             <div>
               <div className="flex items-baseline justify-between">
                 <h1 className="text-xl font-semibold">{selected}</h1>
