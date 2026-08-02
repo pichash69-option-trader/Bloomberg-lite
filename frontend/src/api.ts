@@ -9,3 +9,18 @@ export async function getJSON<T>(path: string): Promise<T> {
 
 export type Health = { status: string; db: boolean; redis: boolean }
 export type Universe = { count: number; underlyings: string[] }
+
+export type Candle = {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number | null
+}
+export type History = {
+  symbol: string
+  interval: string
+  count: number
+  candles: Candle[]
+}

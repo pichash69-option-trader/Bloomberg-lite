@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
+import CandleChart from './components/CandleChart'
 
 function Dot({ ok }: { ok: boolean }) {
   return (
@@ -86,11 +87,13 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-y-auto p-6">
           {selected ? (
             <div>
-              <h1 className="text-xl font-semibold">{selected}</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Live + history panels yahan aayenge (Phase 1–3).
-              </p>
-              <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="flex items-baseline justify-between">
+                <h1 className="text-xl font-semibold">{selected}</h1>
+                <span className="rounded bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">
+                  daily · mock data
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {['LTP', 'Premium', 'PCR', 'Max Pain'].map((k) => (
                   <div
                     key={k}
@@ -102,6 +105,13 @@ export default function App() {
                     <div className="mt-1 font-mono text-lg text-slate-600">—</div>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-6 rounded-lg border border-border bg-panel p-3">
+                <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Price history — candle + volume
+                </div>
+                <CandleChart symbol={selected} />
               </div>
             </div>
           ) : (

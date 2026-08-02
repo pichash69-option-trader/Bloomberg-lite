@@ -8,11 +8,13 @@ live (WS), instruments, and option-chain are added in later phases.
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from app import db, redis_store
 from app.config import UNIVERSE, get_settings
+from app.models import Candle
 
 # Windows cp1252 console safety (v1 gotcha) — safe no-op elsewhere.
 try:
@@ -68,3 +70,25 @@ async def health():
 async def universe():
     """NIFTY 50 index + 50 stocks (51 underlyings)."""
     return {"count": len(UNIVERSE), "underlyings": UNIVERSE}
+
+
+@app.get("/history")
+async def history(symbol: str = Query(...), interval: str = Query("1d")):
+    """Candle history for one underlying (from Postgres/Timescale)."""
+    async with db.SessionLocal() as session:
+        rows = await session.execute(
+            select(Candle)
+            .where(Candle.symbol == symbol, Candle.interval == interval)
+            .order_by(Candle.ts))
+        candles = [
+            {
+                "time": c.ts.strftime("%Y-%m-%d"),
+                "open": c.open, "high": c.high, "low": c.low, "close": c.close,
+                "volume": c.volume,
+            }
+            for c in rows.scalars()
+        ]
+    if not candles:
+        raise HTTPException(404, f"No {interval} history for {symbol}")
+    return {"symbol": symbol, "interval": interval,
+            "count": len(candles), "candles": candles}
