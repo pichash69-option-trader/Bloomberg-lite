@@ -11,6 +11,7 @@ import RiskCalc from './components/RiskCalc'
 import Compare from './components/Compare'
 import PaperView from './components/PaperView'
 import AlertsView from './components/AlertsView'
+import SnapshotTable from './components/SnapshotTable'
 import { type Alert, type Position } from './api'
 import { useLive } from './hooks/useLive'
 
@@ -484,6 +485,14 @@ export default function App() {
                   <div className="text-sm text-slate-500">chain load ho raha…</div>
                 )}
                 {chain && <ChainTable chain={chain} />}
+              </div>
+
+              {/* Daily PCR / max-pain trend */}
+              <div className="mt-6">
+                <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Daily PCR / max-pain trend (latest upar)
+                </div>
+                <SnapshotTable symbol={selected} />
               </div>
             </div>
           ) : (

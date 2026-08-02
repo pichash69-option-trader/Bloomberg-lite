@@ -18,7 +18,7 @@ from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
 from app.dhan_config import mode as data_mode
 from app.mock_feed import feed
-from app.models import Candle
+from app.models import Candle, MetricSnapshot
 
 # Windows cp1252 console safety (v1 gotcha) — safe no-op elsewhere.
 try:
@@ -130,6 +130,23 @@ async def stats():
             "max_dd": round(float((c / c.cummax() - 1).min()) * 100, 2),
         })
     return {"count": len(out), "stats": out}
+
+
+@app.get("/snapshots")
+async def snapshots(symbol: str = Query(...)):
+    """Daily PCR / max-pain / premium trend for one underlying."""
+    async with db.SessionLocal() as session:
+        rows = await session.execute(
+            select(MetricSnapshot).where(MetricSnapshot.symbol == symbol)
+            .order_by(MetricSnapshot.date))
+        data = [
+            {
+                "date": r.date, "pcr": r.pcr, "max_pain": r.max_pain,
+                "futures_premium": r.futures_premium, "spot_close": r.spot_close,
+            }
+            for r in rows.scalars()
+        ]
+    return {"symbol": symbol, "count": len(data), "snapshots": data}
 
 
 @app.get("/movers")

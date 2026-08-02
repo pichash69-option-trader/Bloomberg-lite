@@ -70,6 +70,15 @@ export type Stat = {
 }
 export type Stats = { count: number; stats: Stat[] }
 
+export type Snapshot = {
+  date: string
+  pcr: number
+  max_pain: number
+  futures_premium: number
+  spot_close: number
+}
+export type Snapshots = { symbol: string; count: number; snapshots: Snapshot[] }
+
 export type OptionLeg = {
   ltp: number
   oi: number
