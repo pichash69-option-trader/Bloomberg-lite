@@ -5,6 +5,7 @@ main.py — FastAPI app entrypoint.
 Phase 0: /health (db + redis reachability) + /universe. Routers for history,
 live (WS), instruments, and option-chain are added in later phases.
 """
+import json
 import sys
 from contextlib import asynccontextmanager
 
@@ -183,6 +184,34 @@ async def movers(limit: int = 6):
 async def chain(symbol: str = Query(...)):
     """Option chain + PCR + max-pain + greeks for one underlying (mock for now)."""
     return await build_chain(symbol)
+
+
+@app.get("/snapshot")
+async def snapshot(symbols: str = Query(...)):
+    """Key live metrics for several underlyings (watchlist grid).
+
+    Uses the live feed from Redis if that symbol is subscribed, else a synthetic
+    snapshot from the latest close + chain."""
+    from app.chain import _spot, synth_chain
+
+    redis = redis_store.get_redis()
+    out = []
+    for sym in [s.strip() for s in symbols.split(",") if s.strip()]:
+        raw = await redis.hget(f"live:{sym}", "data")
+        if raw:
+            m = json.loads(raw)
+            out.append({
+                "symbol": sym, "ltp": m["cash"]["ltp"], "chg_pct": m["cash"]["chg_pct"],
+                "pcr": m["options"]["pcr"], "buildup": m["futures"]["buildup"], "live": True,
+            })
+        else:
+            spot = await _spot(sym)
+            ch = synth_chain(sym, spot)
+            out.append({
+                "symbol": sym, "ltp": round(spot, 2), "chg_pct": 0.0,
+                "pcr": ch["pcr"], "buildup": "—", "live": False,
+            })
+    return {"snapshots": out}
 
 
 @app.get("/optdepth")

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
 import LiveTerminal from './components/LiveTerminal'
+import WatchlistGrid from './components/WatchlistGrid'
 import { useLive } from './hooks/useLive'
 
 function Dot({ ok }: { ok: boolean }) {
@@ -191,6 +192,16 @@ export default function App() {
               )}
             </div>
             <LiveTerminal live={live} />
+          </div>
+        ) : watch.length > 0 ? (
+          <div>
+            <div className="mb-4 text-center">
+              <div className="text-2xl">⚡</div>
+              <div className="mt-1 text-sm text-slate-400">
+                Upar search se stock chuno, ya watchlist se tap karo
+              </div>
+            </div>
+            <WatchlistGrid symbols={watch} onSelect={setSelected} />
           </div>
         ) : (
           <div className="grid h-full place-items-center text-center">
