@@ -54,13 +54,20 @@ async def _spot(symbol: str) -> float:
 
 
 def _leg(spot, K, T, iv, opt, oi, rng):
-    price = bs_price(spot, K, T, RISK_FREE, iv, opt)
-    g = greeks(spot, K, T, RISK_FREE, iv, opt)
+    price = max(0.05, bs_price(spot, K, T, RISK_FREE, iv, opt))
+    g = greeks(spot, K, T, RISK_FREE, iv, opt)   # incl. rho
+    chg_oi = int(oi * rng.uniform(-0.15, 0.20))
+    spread = max(0.05, price * 0.01)
     return {
-        "ltp": round(max(0.05, price), 2),
+        "ltp": round(price, 2),
+        "prev_close": round(price * (1 + rng.uniform(-0.06, 0.06)), 2),
         "oi": int(oi),
+        "prev_oi": max(0, int(oi) - chg_oi),
+        "chg_oi": chg_oi,
         "volume": int(oi * rng.uniform(0.2, 0.9)),
         "iv": round(iv * 100, 2),          # show IV in %
+        "bid": round(price - spread / 2, 2),
+        "ask": round(price + spread / 2, 2),
         **g,
     }
 
@@ -109,6 +116,16 @@ def synth_chain(symbol: str, spot: float) -> dict:
     fut = spot * (1 + rng.uniform(-0.001, 0.004))
     premium = round(fut - spot, 2)
 
+    # Derived: IV skew (avg OTM-put IV − avg OTM-call IV) + net Greeks exposure.
+    below = [s["pe"]["iv"] for s in strikes if s["strike"] < atm]
+    above = [s["ce"]["iv"] for s in strikes if s["strike"] > atm]
+    iv_skew = round((sum(below) / len(below) if below else 0)
+                    - (sum(above) / len(above) if above else 0), 2)
+    net_delta = round(sum(s["ce"]["oi"] * s["ce"]["delta"]
+                          + s["pe"]["oi"] * s["pe"]["delta"] for s in strikes))
+    net_gamma = round(sum((s["ce"]["oi"] + s["pe"]["oi"]) * s["ce"]["gamma"]
+                          for s in strikes))
+
     return {
         "symbol": symbol,
         "spot": round(spot, 2),
@@ -119,6 +136,9 @@ def synth_chain(symbol: str, spot: float) -> dict:
         "futures_premium": premium,
         "total_ce_oi": int(tot_ce_oi),
         "total_pe_oi": int(tot_pe_oi),
+        "iv_skew": iv_skew,
+        "net_delta": net_delta,
+        "net_gamma": net_gamma,
         "strikes": strikes,
         "mock": True,
     }

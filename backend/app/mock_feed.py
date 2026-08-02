@@ -11,7 +11,7 @@ payload from DhanHQ (WS Full + Option-Chain REST) behind this exact contract.
 import asyncio
 import json
 import random
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -41,6 +41,21 @@ def _atm_greeks(chain: dict):
     return 0.0, 0.0, 0.0
 
 
+def _depth(mid: float, spread: float, tick: float, rng: random.Random, n: int = 5):
+    """Synthetic n-level market depth ladder."""
+    out = []
+    for i in range(n):
+        out.append({
+            "bid_price": round(mid - spread / 2 - i * tick, 2),
+            "bid_qty": rng.randint(50, 6000),
+            "bid_orders": rng.randint(1, 40),
+            "ask_price": round(mid + spread / 2 + i * tick, 2),
+            "ask_qty": rng.randint(50, 6000),
+            "ask_orders": rng.randint(1, 40),
+        })
+    return out
+
+
 class MockFeed:
     def __init__(self) -> None:
         self._tasks: dict[str, asyncio.Task] = {}
@@ -65,8 +80,11 @@ class MockFeed:
         hi = lo = prev_close
         volume = 0
         fut_oi = rng.uniform(5e6, 2.5e7)
+        oi_day_high = oi_day_low = fut_oi
         premium = spot * rng.uniform(-0.001, 0.004)
         prev_ce_oi = prev_pe_oi = None
+        opt_expiries = [(date.today() + timedelta(days=d)).strftime("%d %b")
+                        for d in (7, 14, 28)]
 
         try:
             while True:
@@ -87,9 +105,11 @@ class MockFeed:
                 # --- Futures (long/short) ---
                 prev_fut_oi = fut_oi
                 fut_oi = max(1e5, fut_oi * (1 + rng.gauss(0, 0.004)))
+                oi_day_high, oi_day_low = max(oi_day_high, fut_oi), min(oi_day_low, fut_oi)
                 premium += rng.gauss(0, spot * 0.0003)
                 fut_ltp = spot + premium
                 fut_buildup = classify_buildup(d_price, fut_oi - prev_fut_oi)
+                tick_px = round(max(0.05, spot * 0.0005), 2)
 
                 # --- Options (CE/PE) ---
                 chain = synth_chain(symbol, spot)
@@ -106,6 +126,8 @@ class MockFeed:
                     "mock": True,
                     "cash": {
                         "ltp": round(spot, 2),
+                        "last_qty": rng.randint(1, 800),
+                        "atp": round((hi + lo + spot) / 3, 2),
                         "prev_close": round(prev_close, 2),
                         "chg": round(spot - prev_close, 2),
                         "chg_pct": round((spot - prev_close) / prev_close * 100, 2),
@@ -119,19 +141,35 @@ class MockFeed:
                         "bid": round(spot - spread / 2, 2),
                         "ask": round(spot + spread / 2, 2),
                         "spread": spread,
+                        "upper_circuit": round(prev_close * 1.1, 2),
+                        "lower_circuit": round(prev_close * 0.9, 2),
+                        "depth": _depth(spot, spread, tick_px, rng),
                     },
                     "futures": {
                         "ltp": round(fut_ltp, 2),
+                        "atp": round(fut_ltp * (1 + rng.uniform(-0.001, 0.001)), 2),
                         "oi": int(fut_oi),
+                        "oi_day_high": int(oi_day_high),
+                        "oi_day_low": int(oi_day_low),
                         "chg_oi": int(fut_oi - prev_fut_oi),
                         "premium": round(premium, 2),
                         "premium_pct": round(premium / spot * 100, 2),
+                        "basis": round(premium, 2),
                         "buildup": fut_buildup,
+                        "depth": _depth(fut_ltp, spread, tick_px, rng),
+                        "expiries": [
+                            {"label": lbl, "ltp": round(fut_ltp + spot * off, 2),
+                             "oi": int(fut_oi * w), "premium": round(premium + spot * off, 2)}
+                            for lbl, off, w in [("Near", 0.0, 1.0),
+                                                ("Next", 0.002, 0.4),
+                                                ("Far", 0.004, 0.15)]
+                        ],
                     },
                     "options": {
                         "pcr": chain["pcr"],
                         "max_pain": chain["max_pain"],
                         "atm": chain["atm"],
+                        "expiries": opt_expiries,
                         "total_ce_oi": int(ce_oi),
                         "total_pe_oi": int(pe_oi),
                         "ce_chg_oi": int(ce_chg),
@@ -139,6 +177,9 @@ class MockFeed:
                         "atm_iv": atm_iv,
                         "atm_ce_delta": atm_ce_d,
                         "atm_pe_delta": atm_pe_d,
+                        "iv_skew": chain["iv_skew"],
+                        "net_delta": chain["net_delta"],
+                        "net_gamma": chain["net_gamma"],
                         "ce_buildup": classify_buildup(d_price, ce_chg),
                         "pe_buildup": classify_buildup(d_price, pe_chg),
                         "strikes": chain["strikes"],

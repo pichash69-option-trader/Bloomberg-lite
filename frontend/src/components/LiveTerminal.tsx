@@ -1,13 +1,13 @@
-import { type LiveState } from '../api'
+import { type DepthLevel, type LiveState } from '../api'
 
-function n(v: number, d = 2): string {
-  return v.toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
+function n(v: number | undefined, d = 2): string {
+  return (v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
 }
-function oi(v: number): string {
-  return v.toLocaleString('en-IN')
+function oi(v: number | undefined): string {
+  return (v ?? 0).toLocaleString('en-IN')
 }
-function signed(v: number): string {
-  return `${v >= 0 ? '+' : ''}${n(v)}`
+function signed(v: number | undefined): string {
+  return `${(v ?? 0) >= 0 ? '+' : ''}${n(v)}`
 }
 
 const BULL = ['Long Buildup', 'Short Covering']
@@ -17,23 +17,24 @@ function buildupCls(b: string): string {
   if (BEAR.includes(b)) return 'bg-down/15 text-down'
   return 'bg-white/5 text-slate-400'
 }
+function Chip({ text }: { text: string }) {
+  return <span className={`rounded px-2 py-0.5 text-xs font-semibold ${buildupCls(text)}`}>{text}</span>
+}
 
 function Tile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-panel p-3">
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-1 font-mono text-base">{children}</div>
+      <div className="mt-1 font-mono text-sm">{children}</div>
     </div>
   )
 }
 
 function Section({ title, tag, children }: { title: string; tag: string; children: React.ReactNode }) {
   return (
-    <section className="mt-5">
-      <div className="mb-2 flex items-baseline gap-2 px-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo">
-          {title}
-        </span>
+    <section className="mt-6">
+      <div className="mb-2 flex items-baseline gap-2 border-b border-border/60 pb-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo">{title}</span>
         <span className="text-[10px] text-slate-600">{tag}</span>
       </div>
       {children}
@@ -41,14 +42,53 @@ function Section({ title, tag, children }: { title: string; tag: string; childre
   )
 }
 
-function Chip({ text }: { text: string }) {
-  return <span className={`rounded px-2 py-0.5 text-xs font-semibold ${buildupCls(text)}`}>{text}</span>
+function DepthLadder({ depth }: { depth: DepthLevel[] }) {
+  if (!depth?.length) return null
+  const maxQty = Math.max(...depth.flatMap((d) => [d.bid_qty, d.ask_qty]), 1)
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full font-mono text-[11px]">
+        <thead className="bg-panel text-[9px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-2 py-1 text-left">Ord</th>
+            <th className="px-2 py-1 text-right">Bid Qty</th>
+            <th className="px-2 py-1 text-right text-up">Bid</th>
+            <th className="px-2 py-1 text-left text-down">Ask</th>
+            <th className="px-2 py-1 text-right">Ask Qty</th>
+            <th className="px-2 py-1 text-right">Ord</th>
+          </tr>
+        </thead>
+        <tbody>
+          {depth.map((d, i) => (
+            <tr key={i} className="border-t border-border/40">
+              <td className="px-2 py-0.5 text-left text-slate-500">{d.bid_orders}</td>
+              <td className="relative px-2 py-0.5 text-right text-slate-300">
+                <span
+                  className="absolute inset-y-0 right-0 bg-up/10"
+                  style={{ width: `${(d.bid_qty / maxQty) * 100}%` }}
+                />
+                <span className="relative">{oi(d.bid_qty)}</span>
+              </td>
+              <td className="px-2 py-0.5 text-right text-up">{n(d.bid_price)}</td>
+              <td className="px-2 py-0.5 text-left text-down">{n(d.ask_price)}</td>
+              <td className="relative px-2 py-0.5 text-right text-slate-300">
+                <span
+                  className="absolute inset-y-0 left-0 bg-down/10"
+                  style={{ width: `${(d.ask_qty / maxQty) * 100}%` }}
+                />
+                <span className="relative">{oi(d.ask_qty)}</span>
+              </td>
+              <td className="px-2 py-0.5 text-right text-slate-500">{d.ask_orders}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default function LiveTerminal({ live }: { live: LiveState | null }) {
-  if (!live) {
-    return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
-  }
+  if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
   const { cash: c, futures: f, options: o } = live
   const up = c.chg >= 0
   const atmRow = o.strikes.find((s) => s.strike === o.atm)
@@ -57,49 +97,64 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
     <div>
       {/* ============ CASH MARKET ============ */}
       <Section title="Cash Market" tag="Buy / Sell">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           <Tile label="LTP">
-            <span className={up ? 'text-up' : 'text-down'}>₹{n(c.ltp)}</span>
+            <span className={`text-base ${up ? 'text-up' : 'text-down'}`}>₹{n(c.ltp)}</span>
             <div className={`text-xs ${up ? 'text-up' : 'text-down'}`}>
               {up ? '▲' : '▼'} {signed(c.chg)} ({signed(c.chg_pct)}%)
             </div>
           </Tile>
-          <Tile label="O / H / L">
-            <span className="text-sm text-slate-300">
-              {n(c.open)} / {n(c.high)} / {n(c.low)}
-            </span>
+          <Tile label="Open / High / Low">
+            <span className="text-slate-300">{n(c.open)}/{n(c.high)}/{n(c.low)}</span>
+          </Tile>
+          <Tile label="ATP">
+            <span className="text-slate-300">{n(c.atp)}</span>
           </Tile>
           <Tile label="Volume">
             <span className="text-slate-300">{oi(c.volume)}</span>
           </Tile>
-          <Tile label="Bid / Ask (spread)">
-            <span className="text-sm text-slate-300">
-              {n(c.bid)} / {n(c.ask)}{' '}
-              <span className="text-slate-500">({n(c.spread)})</span>
+          <Tile label="Bid / Ask (spr)">
+            <span className="text-slate-300">
+              {n(c.bid)}/{n(c.ask)} <span className="text-slate-500">({n(c.spread)})</span>
+            </span>
+          </Tile>
+          <Tile label="Circuit ↑ / ↓">
+            <span className="text-slate-300">
+              <span className="text-up">{n(c.upper_circuit)}</span> /{' '}
+              <span className="text-down">{n(c.lower_circuit)}</span>
             </span>
           </Tile>
         </div>
 
-        {/* Buy/Sell pressure bar */}
-        <div className="mt-3 rounded-lg border border-border bg-panel p-3">
-          <div className="flex justify-between text-[11px] uppercase tracking-wider">
-            <span className="text-up">Buy {c.buy_pct}%</span>
-            <span className="text-slate-500">Order pressure</span>
-            <span className="text-down">Sell {n(100 - c.buy_pct, 1)}%</span>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {/* Buy/Sell pressure */}
+          <div className="rounded-lg border border-border bg-panel p-3">
+            <div className="flex justify-between text-[11px] uppercase tracking-wider">
+              <span className="text-up">Buy {c.buy_pct}%</span>
+              <span className="text-slate-500">Order pressure</span>
+              <span className="text-down">Sell {n(100 - c.buy_pct, 1)}%</span>
+            </div>
+            <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-down/40">
+              <div className="bg-up" style={{ width: `${c.buy_pct}%` }} />
+            </div>
+            <div className="mt-1 flex justify-between font-mono text-[11px] text-slate-500">
+              <span>{oi(c.buy_qty)}</span>
+              <span>{oi(c.sell_qty)}</span>
+            </div>
           </div>
-          <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-down/40">
-            <div className="bg-up" style={{ width: `${c.buy_pct}%` }} />
-          </div>
-          <div className="mt-1 flex justify-between font-mono text-[11px] text-slate-500">
-            <span>{oi(c.buy_qty)}</span>
-            <span>{oi(c.sell_qty)}</span>
+          {/* Depth ladder */}
+          <div>
+            <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-slate-500">
+              Market depth (5)
+            </div>
+            <DepthLadder depth={c.depth} />
           </div>
         </div>
       </Section>
 
       {/* ============ FUTURES ============ */}
       <Section title="Futures" tag="Long / Short">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           <Tile label="Fut LTP">
             <span className="text-slate-300">₹{n(f.ltp)}</span>
           </Tile>
@@ -109,7 +164,10 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           <Tile label="Chg OI">
             <span className={f.chg_oi >= 0 ? 'text-up' : 'text-down'}>{signed(f.chg_oi)}</span>
           </Tile>
-          <Tile label="Premium / Disc">
+          <Tile label="OI Day H / L">
+            <span className="text-slate-300">{oi(f.oi_day_high)}/{oi(f.oi_day_low)}</span>
+          </Tile>
+          <Tile label="Premium / Basis">
             <span className={f.premium >= 0 ? 'text-up' : 'text-down'}>
               {signed(f.premium)} ({signed(f.premium_pct)}%)
             </span>
@@ -118,11 +176,48 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             <Chip text={f.buildup} />
           </Tile>
         </div>
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {/* Multi-expiry */}
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full font-mono text-xs">
+              <thead className="bg-panel text-[10px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">Expiry</th>
+                  <th className="px-3 py-1.5 text-right">LTP</th>
+                  <th className="px-3 py-1.5 text-right">OI</th>
+                  <th className="px-3 py-1.5 text-right">Premium</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(f.expiries ?? []).map((e) => (
+                  <tr key={e.label} className="border-t border-border/40">
+                    <td className="px-3 py-1 text-left text-slate-300">{e.label}</td>
+                    <td className="px-3 py-1 text-right text-slate-400">{n(e.ltp)}</td>
+                    <td className="px-3 py-1 text-right text-slate-400">{oi(e.oi)}</td>
+                    <td
+                      className={`px-3 py-1 text-right ${e.premium >= 0 ? 'text-up' : 'text-down'}`}
+                    >
+                      {signed(e.premium)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Fut depth */}
+          <div>
+            <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-slate-500">
+              Futures depth (5)
+            </div>
+            <DepthLadder depth={f.depth} />
+          </div>
+        </div>
       </Section>
 
       {/* ============ OPTIONS ============ */}
-      <Section title="Options" tag="CE / PE">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <Section title="Options" tag={`CE / PE · exp ${(o.expiries ?? []).join(' · ')}`}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           <Tile label="PCR">
             <span className={o.pcr >= 1 ? 'text-up' : 'text-down'}>{n(o.pcr)}</span>
           </Tile>
@@ -132,14 +227,20 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           <Tile label="ATM">
             <span className="text-slate-300">{n(o.atm)}</span>
           </Tile>
-          <Tile label="ATM IV / Δ">
-            <span className="text-sm text-slate-300">
-              {o.atm_iv}% · {o.atm_ce_delta}/{o.atm_pe_delta}
-            </span>
+          <Tile label="ATM IV">
+            <span className="text-slate-300">{o.atm_iv}%</span>
+          </Tile>
+          <Tile label="IV Skew">
+            <span className={o.iv_skew >= 0 ? 'text-down' : 'text-up'}>{signed(o.iv_skew)}</span>
+          </Tile>
+          <Tile label="Net Δ">
+            <span className={o.net_delta >= 0 ? 'text-up' : 'text-down'}>{oi(o.net_delta)}</span>
+          </Tile>
+          <Tile label="Net Γ">
+            <span className="text-slate-300">{oi(o.net_gamma)}</span>
           </Tile>
         </div>
 
-        {/* CE vs PE OI + buildup */}
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border bg-panel p-3">
             <div className="flex items-center justify-between">
@@ -148,9 +249,7 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             </div>
             <div className="mt-1 font-mono text-sm text-slate-300">
               OI {oi(o.total_ce_oi)}{' '}
-              <span className={o.ce_chg_oi >= 0 ? 'text-up' : 'text-down'}>
-                ({signed(o.ce_chg_oi)})
-              </span>
+              <span className={o.ce_chg_oi >= 0 ? 'text-up' : 'text-down'}>({signed(o.ce_chg_oi)})</span>
             </div>
           </div>
           <div className="rounded-lg border border-border bg-panel p-3">
@@ -160,44 +259,43 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             </div>
             <div className="mt-1 font-mono text-sm text-slate-300">
               OI {oi(o.total_pe_oi)}{' '}
-              <span className={o.pe_chg_oi >= 0 ? 'text-up' : 'text-down'}>
-                ({signed(o.pe_chg_oi)})
-              </span>
+              <span className={o.pe_chg_oi >= 0 ? 'text-up' : 'text-down'}>({signed(o.pe_chg_oi)})</span>
             </div>
           </div>
         </div>
 
-        {/* Chain table */}
-        <div className="mt-3 max-h-[360px] overflow-auto rounded-lg border border-border">
+        {/* Chain with chg-OI */}
+        <div className="mt-3 max-h-[380px] overflow-auto rounded-lg border border-border">
           <table className="w-full border-collapse text-right font-mono text-xs">
             <thead className="sticky top-0 bg-panel text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-up">CE OI</th>
-                <th className="px-3 py-2 text-up">CE LTP</th>
-                <th className="px-3 py-2 text-center text-slate-400">Strike</th>
-                <th className="px-3 py-2 text-down">PE LTP</th>
-                <th className="px-3 py-2 text-down">PE OI</th>
+                <th className="px-2 py-2 text-up">Chg OI</th>
+                <th className="px-2 py-2 text-up">CE OI</th>
+                <th className="px-2 py-2 text-up">CE LTP</th>
+                <th className="px-2 py-2 text-center text-slate-400">Strike</th>
+                <th className="px-2 py-2 text-down">PE LTP</th>
+                <th className="px-2 py-2 text-down">PE OI</th>
+                <th className="px-2 py-2 text-down">Chg OI</th>
               </tr>
             </thead>
             <tbody>
-              {o.strikes.map((s) => {
-                const isAtm = s.strike === o.atm
+              {(o.strikes ?? []).map((s) => {
+                const atm = s.strike === o.atm
                 return (
-                  <tr
-                    key={s.strike}
-                    className={`border-t border-border/50 ${isAtm ? 'bg-indigo/10' : ''}`}
-                  >
-                    <td className="px-3 py-1 text-slate-400">{oi(s.ce.oi)}</td>
-                    <td className="px-3 py-1 text-up">{n(s.ce.ltp)}</td>
-                    <td
-                      className={`px-3 py-1 text-center font-semibold ${
-                        isAtm ? 'text-indigo' : 'text-slate-300'
-                      }`}
-                    >
+                  <tr key={s.strike} className={`border-t border-border/50 ${atm ? 'bg-indigo/10' : ''}`}>
+                    <td className={`px-2 py-1 ${s.ce.chg_oi >= 0 ? 'text-up' : 'text-down'}`}>
+                      {signed(s.ce.chg_oi)}
+                    </td>
+                    <td className="px-2 py-1 text-slate-400">{oi(s.ce.oi)}</td>
+                    <td className="px-2 py-1 text-up">{n(s.ce.ltp)}</td>
+                    <td className={`px-2 py-1 text-center font-semibold ${atm ? 'text-indigo' : 'text-slate-300'}`}>
                       {n(s.strike, 0)}
                     </td>
-                    <td className="px-3 py-1 text-down">{n(s.pe.ltp)}</td>
-                    <td className="px-3 py-1 text-slate-400">{oi(s.pe.oi)}</td>
+                    <td className="px-2 py-1 text-down">{n(s.pe.ltp)}</td>
+                    <td className="px-2 py-1 text-slate-400">{oi(s.pe.oi)}</td>
+                    <td className={`px-2 py-1 ${s.pe.chg_oi >= 0 ? 'text-up' : 'text-down'}`}>
+                      {signed(s.pe.chg_oi)}
+                    </td>
                   </tr>
                 )
               })}
@@ -206,8 +304,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
         </div>
         {atmRow && (
           <p className="mt-2 text-[11px] text-slate-600">
-            ATM {o.atm}: CE {n(atmRow.ce.ltp)} (Δ {atmRow.ce.delta}, θ {atmRow.ce.theta}) · PE{' '}
-            {n(atmRow.pe.ltp)} (Δ {atmRow.pe.delta}, θ {atmRow.pe.theta})
+            ATM {o.atm} greeks — CE: Δ {atmRow.ce.delta} Γ {atmRow.ce.gamma} Θ {atmRow.ce.theta} Vega{' '}
+            {atmRow.ce.vega} Rho {atmRow.ce.rho} · PE: Δ {atmRow.pe.delta} Θ {atmRow.pe.theta} Rho{' '}
+            {atmRow.pe.rho}
           </p>
         )}
       </Section>
