@@ -66,7 +66,12 @@ def _leg(spot, K, T, iv, opt, oi, rng):
 
 
 async def build_chain(symbol: str) -> dict:
-    spot = await _spot(symbol)
+    """Async wrapper: resolve live/last spot, then build the chain."""
+    return synth_chain(symbol, await _spot(symbol))
+
+
+def synth_chain(symbol: str, spot: float) -> dict:
+    """Synthetic option chain around `spot` (sync, reusable every tick)."""
     step = strike_step(spot)
     atm = round(spot / step) * step
     T = EXPIRY_DAYS / 365.0

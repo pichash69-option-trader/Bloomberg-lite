@@ -8,77 +8,10 @@ export async function getJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export type Health = { status: string; db: boolean; redis: boolean }
+export type Health = { status: string; db: boolean; redis: boolean; mode: string }
 export type Universe = { count: number; underlyings: string[] }
 
-export type Candle = {
-  time: string
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number | null
-}
-export type History = {
-  symbol: string
-  interval: string
-  count: number
-  candles: Candle[]
-}
-
-export type Live = {
-  symbol: string
-  ltp: number
-  prev_close: number
-  chg: number
-  chg_pct: number
-  ts: string
-  mock: boolean
-}
-
-export type Mover = { symbol: string; last: number; chg_pct: number }
-export type Movers = { gainers: Mover[]; losers: Mover[] }
-
-export type Position = {
-  id: number
-  symbol: string
-  side: 'buy' | 'sell'
-  qty: number
-  entry: number
-  ts: string
-}
-
-export type Alert = {
-  id: number
-  symbol: string
-  metric: 'LTP' | 'PCR'
-  op: '>' | '<'
-  value: number
-  triggered?: boolean
-  at?: string
-}
-
-export type Stat = {
-  symbol: string
-  last: number
-  ret_1w: number | null
-  ret_1m: number | null
-  cum_return: number
-  ann_vol: number
-  sharpe: number
-  max_dd: number
-}
-export type Stats = { count: number; stats: Stat[] }
-
-export type Snapshot = {
-  date: string
-  pcr: number
-  max_pain: number
-  futures_premium: number
-  spot_close: number
-}
-export type Snapshots = { symbol: string; count: number; snapshots: Snapshot[] }
-
+// ---- Option chain leg (per strike) ----
 export type OptionLeg = {
   ltp: number
   oi: number
@@ -91,16 +24,52 @@ export type OptionLeg = {
   rho: number
 }
 export type ChainRow = { strike: number; ce: OptionLeg; pe: OptionLeg }
-export type Chain = {
-  symbol: string
-  spot: number
-  atm: number
-  expiry_days: number
+
+// ---- Live-math payload (Cash / Futures / Options), pushed every ~1.5s ----
+export type CashLive = {
+  ltp: number
+  prev_close: number
+  chg: number
+  chg_pct: number
+  open: number
+  high: number
+  low: number
+  volume: number
+  buy_qty: number
+  sell_qty: number
+  buy_pct: number
+  bid: number
+  ask: number
+  spread: number
+}
+export type FutLive = {
+  ltp: number
+  oi: number
+  chg_oi: number
+  premium: number
+  premium_pct: number
+  buildup: string
+}
+export type OptLive = {
   pcr: number
   max_pain: number
-  futures_premium: number
+  atm: number
   total_ce_oi: number
   total_pe_oi: number
+  ce_chg_oi: number
+  pe_chg_oi: number
+  atm_iv: number
+  atm_ce_delta: number
+  atm_pe_delta: number
+  ce_buildup: string
+  pe_buildup: string
   strikes: ChainRow[]
+}
+export type LiveState = {
+  symbol: string
+  ts: string
   mock: boolean
+  cash: CashLive
+  futures: FutLive
+  options: OptLive
 }

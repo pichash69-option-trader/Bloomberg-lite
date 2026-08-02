@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { WS_URL, type Live } from '../api'
+import { WS_URL, type LiveState } from '../api'
 
 /**
- * Subscribe to the live tick stream for `symbol`. Opens a WebSocket to the
- * backend; the backend starts/stops the (mock) feed per subscriber. Returns the
- * latest live state, or null while connecting / when no symbol is selected.
+ * Subscribe to the live-math stream for `symbol`. The backend starts/stops the
+ * (mock or real) feed per subscriber and pushes the full Cash/Futures/Options
+ * payload every ~1.5s. Returns the latest state, or null while connecting.
  */
-export function useLive(symbol: string | null): Live | null {
-  const [live, setLive] = useState<Live | null>(null)
+export function useLive(symbol: string | null): LiveState | null {
+  const [live, setLive] = useState<LiveState | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export function useLive(symbol: string | null): Live | null {
     wsRef.current = ws
     ws.onmessage = (e) => {
       try {
-        setLive(JSON.parse(e.data) as Live)
+        setLive(JSON.parse(e.data) as LiveState)
       } catch {
         /* ignore malformed frame */
       }
