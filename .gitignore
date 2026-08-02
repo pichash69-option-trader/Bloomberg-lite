@@ -32,6 +32,10 @@ data/
 *.log
 logs/
 
+# --- Third-party reference (copyrighted — local only, do NOT publish) ---
+docs/QUANT_BIBLE.md
+*.pdf
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db
