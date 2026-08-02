@@ -10,10 +10,19 @@ import StatsTable from './components/StatsTable'
 import RiskCalc from './components/RiskCalc'
 import Compare from './components/Compare'
 import PaperView from './components/PaperView'
-import { type Position } from './api'
+import AlertsView from './components/AlertsView'
+import { type Alert, type Position } from './api'
 import { useLive } from './hooks/useLive'
 
-type View = 'terminal' | 'payoff' | 'stats' | 'compare' | 'risk' | 'charges' | 'paper'
+type View =
+  | 'terminal'
+  | 'payoff'
+  | 'stats'
+  | 'compare'
+  | 'risk'
+  | 'charges'
+  | 'paper'
+  | 'alerts'
 const NAV: { key: View; label: string }[] = [
   { key: 'terminal', label: 'Terminal' },
   { key: 'payoff', label: 'Payoff' },
@@ -21,6 +30,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'compare', label: 'Compare' },
   { key: 'risk', label: 'Risk' },
   { key: 'paper', label: 'Paper' },
+  { key: 'alerts', label: 'Alerts' },
   { key: 'charges', label: 'Charges' },
 ]
 
@@ -77,6 +87,38 @@ export default function App() {
       { id: Date.now(), symbol, side, qty: orderQty, entry: price, ts: new Date().toISOString() },
     ])
 
+  // ---- Alerts ----
+  const [alerts, setAlerts] = useState<Alert[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('alerts') || '[]')
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem('alerts', JSON.stringify(alerts))
+  }, [alerts])
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([])
+  const fire = (msg: string) => {
+    const id = Date.now() + Math.random()
+    setToasts((t) => [...t, { id, msg }])
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
+  }
+  const evalAlerts = (metric: 'LTP' | 'PCR', value: number) => {
+    if (!selected) return
+    setAlerts((as) =>
+      as.map((a) => {
+        if (a.triggered || a.symbol !== selected || a.metric !== metric) return a
+        const hit = a.op === '>' ? value > a.value : value < a.value
+        if (hit) {
+          fire(`🔔 ${a.symbol} ${a.metric} ${a.op} ${a.value} (now ${value})`)
+          return { ...a, triggered: true, at: new Date().toLocaleTimeString() }
+        }
+        return a
+      }),
+    )
+  }
+
   const health = useQuery({
     queryKey: ['health'],
     queryFn: () => getJSON<Health>('/health'),
@@ -110,6 +152,16 @@ export default function App() {
     refetchInterval: 3000, // matches DhanHQ option-chain rate limit
   })
   const chain = chainQ.data
+
+  // Evaluate alerts against the selected symbol's live LTP / chain PCR.
+  useEffect(() => {
+    if (live) evalAlerts('LTP', live.ltp)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live?.ltp])
+  useEffect(() => {
+    if (chain) evalAlerts('PCR', chain.pcr)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chain?.pcr])
 
   return (
     <div className="flex h-full flex-col">
@@ -242,6 +294,14 @@ export default function App() {
               positions={paper}
               onClose={(id) => setPaper((p) => p.filter((x) => x.id !== id))}
               onClear={() => setPaper([])}
+            />
+          ) : view === 'alerts' ? (
+            <AlertsView
+              alerts={alerts}
+              symbols={uni.data?.underlyings ?? []}
+              currentSymbol={selected}
+              onAdd={(a) => setAlerts((as) => [...as, { ...a, id: Date.now() }])}
+              onDelete={(id) => setAlerts((as) => as.filter((x) => x.id !== id))}
             />
           ) : view === 'payoff' ? (
             <PayoffBuilder chain={chain} symbol={selected} />
@@ -445,6 +505,18 @@ export default function App() {
       <footer className="border-t border-border bg-panel px-5 py-2 text-center text-[11px] text-slate-600">
         ⚠️ Educational / research tool — trading advice nahi. Data: DhanHQ.
       </footer>
+
+      {/* Alert toasts */}
+      <div className="pointer-events-none fixed right-4 top-16 z-50 flex flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="pointer-events-auto rounded-lg border border-indigo/40 bg-panel px-4 py-2 text-sm text-slate-200 shadow-lg"
+          >
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

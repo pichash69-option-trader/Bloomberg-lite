@@ -48,6 +48,16 @@ export type Position = {
   ts: string
 }
 
+export type Alert = {
+  id: number
+  symbol: string
+  metric: 'LTP' | 'PCR'
+  op: '>' | '<'
+  value: number
+  triggered?: boolean
+  at?: string
+}
+
 export type Stat = {
   symbol: string
   last: number
