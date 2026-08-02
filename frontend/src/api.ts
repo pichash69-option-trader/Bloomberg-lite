@@ -39,6 +39,18 @@ export type Live = {
 export type Mover = { symbol: string; last: number; chg_pct: number }
 export type Movers = { gainers: Mover[]; losers: Mover[] }
 
+export type Stat = {
+  symbol: string
+  last: number
+  ret_1w: number | null
+  ret_1m: number | null
+  cum_return: number
+  ann_vol: number
+  sharpe: number
+  max_dd: number
+}
+export type Stats = { count: number; stats: Stat[] }
+
 export type OptionLeg = {
   ltp: number
   oi: number

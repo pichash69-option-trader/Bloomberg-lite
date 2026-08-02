@@ -6,12 +6,14 @@ import ChainTable from './components/ChainTable'
 import MoversBar from './components/MoversBar'
 import ChargesCalc from './components/ChargesCalc'
 import PayoffBuilder from './components/PayoffBuilder'
+import StatsTable from './components/StatsTable'
 import { useLive } from './hooks/useLive'
 
-type View = 'terminal' | 'payoff' | 'charges'
+type View = 'terminal' | 'payoff' | 'stats' | 'charges'
 const NAV: { key: View; label: string }[] = [
   { key: 'terminal', label: 'Terminal' },
   { key: 'payoff', label: 'Payoff' },
+  { key: 'stats', label: 'Stats' },
   { key: 'charges', label: 'Charges' },
 ]
 
@@ -150,6 +152,13 @@ export default function App() {
             <ChargesCalc />
           ) : view === 'payoff' ? (
             <PayoffBuilder chain={chain} symbol={selected} />
+          ) : view === 'stats' ? (
+            <StatsTable
+              onSelect={(s) => {
+                setSelected(s)
+                setView('terminal')
+              }}
+            />
           ) : selected ? (
             <div>
               <div className="flex items-baseline justify-between">

@@ -98,6 +98,40 @@ async def history(symbol: str = Query(...), interval: str = Query("1d")):
             "count": len(candles), "candles": candles}
 
 
+@app.get("/stats")
+async def stats():
+    """Pure-math per-stock statistics across the 50 stocks (from daily candles)."""
+    import numpy as np
+    import pandas as pd
+
+    async with db.SessionLocal() as session:
+        rows = (await session.execute(text(
+            "SELECT symbol, ts, close FROM candles "
+            "WHERE interval='1d' AND segment='NSE_EQ' ORDER BY symbol, ts"))).all()
+
+    df = pd.DataFrame(rows, columns=["symbol", "ts", "close"])
+    out = []
+    for sym, g in df.groupby("symbol"):
+        c = g["close"].astype(float).reset_index(drop=True)
+        if len(c) < 30:
+            continue
+        ret = c.pct_change().dropna()
+        vol = float(ret.std())
+        mean = float(ret.mean())
+        last, first = float(c.iloc[-1]), float(c.iloc[0])
+        out.append({
+            "symbol": sym,
+            "last": round(last, 2),
+            "ret_1w": round((last / float(c.iloc[-6]) - 1) * 100, 2) if len(c) >= 6 else None,
+            "ret_1m": round((last / float(c.iloc[-22]) - 1) * 100, 2) if len(c) >= 22 else None,
+            "cum_return": round((last / first - 1) * 100, 2),
+            "ann_vol": round(vol * np.sqrt(252) * 100, 2),
+            "sharpe": round(mean / vol, 2) if vol > 0 else 0.0,
+            "max_dd": round(float((c / c.cummax() - 1).min()) * 100, 2),
+        })
+    return {"count": len(out), "stats": out}
+
+
 @app.get("/movers")
 async def movers(limit: int = 6):
     """Top gainers/losers across the 50 stocks (latest daily close vs previous)."""
