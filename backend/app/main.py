@@ -8,12 +8,14 @@ live (WS), instruments, and option-chain are added in later phases.
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import (FastAPI, HTTPException, Query, WebSocket,
+                     WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app import db, redis_store
 from app.config import UNIVERSE, get_settings
+from app.mock_feed import feed
 from app.models import Candle
 
 # Windows cp1252 console safety (v1 gotcha) — safe no-op elsewhere.
@@ -92,3 +94,27 @@ async def history(symbol: str = Query(...), interval: str = Query("1d")):
         raise HTTPException(404, f"No {interval} history for {symbol}")
     return {"symbol": symbol, "interval": interval,
             "count": len(candles), "candles": candles}
+
+
+@app.websocket("/ws/live")
+async def ws_live(ws: WebSocket, symbol: str = Query(...)):
+    """Live tick stream for the selected symbol (mock feed → Redis → WS)."""
+    await ws.accept()
+    await feed.subscribe(symbol)
+    redis = redis_store.get_redis()
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(f"live:{symbol}")
+    try:
+        # Push the current snapshot immediately (don't wait a full second).
+        snap = await redis.hget(f"live:{symbol}", "data")
+        if snap:
+            await ws.send_text(snap)
+        async for msg in pubsub.listen():
+            if msg.get("type") == "message":
+                await ws.send_text(msg["data"])
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await pubsub.unsubscribe(f"live:{symbol}")
+        await pubsub.aclose()
+        await feed.unsubscribe(symbol)

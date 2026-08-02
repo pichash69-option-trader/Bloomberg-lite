@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
 import CandleChart from './components/CandleChart'
+import { useLive } from './hooks/useLive'
 
 function Dot({ ok }: { ok: boolean }) {
   return (
@@ -24,6 +25,7 @@ export default function App() {
     queryKey: ['universe'],
     queryFn: () => getJSON<Universe>('/universe'),
   })
+  const live = useLive(selected)
 
   return (
     <div className="flex h-full flex-col">
@@ -89,12 +91,45 @@ export default function App() {
             <div>
               <div className="flex items-baseline justify-between">
                 <h1 className="text-xl font-semibold">{selected}</h1>
-                <span className="rounded bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">
-                  daily · mock data
+                <span className="flex items-center gap-1.5 rounded bg-white/5 px-2 py-0.5 text-[11px] text-slate-400">
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      live ? 'animate-pulse bg-up' : 'bg-slate-600'
+                    }`}
+                  />
+                  {live ? 'LIVE · mock' : 'connecting…'}
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {['LTP', 'Premium', 'PCR', 'Max Pain'].map((k) => (
+                {/* LTP — live */}
+                <div className="rounded-lg border border-border bg-panel p-4">
+                  <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                    LTP
+                  </div>
+                  {live ? (
+                    <>
+                      <div
+                        className={`mt-1 font-mono text-lg ${
+                          live.chg >= 0 ? 'text-up' : 'text-down'
+                        }`}
+                      >
+                        ₹{live.ltp.toFixed(2)}
+                      </div>
+                      <div
+                        className={`text-xs ${
+                          live.chg >= 0 ? 'text-up' : 'text-down'
+                        }`}
+                      >
+                        {live.chg >= 0 ? '▲' : '▼'} {live.chg.toFixed(2)} (
+                        {live.chg_pct.toFixed(2)}%)
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-1 font-mono text-lg text-slate-600">—</div>
+                  )}
+                </div>
+                {/* Placeholders — Phase 3 */}
+                {['Premium', 'PCR', 'Max Pain'].map((k) => (
                   <div
                     key={k}
                     className="rounded-lg border border-border bg-panel p-4"
