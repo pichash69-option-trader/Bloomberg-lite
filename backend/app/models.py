@@ -7,7 +7,7 @@ added in Step 2 as a Timescale hypertable.
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String
+from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -37,3 +37,26 @@ class Instrument(Base):
     def __repr__(self) -> str:
         return (f"<Instrument {self.symbol} {self.kind} "
                 f"id={self.security_id} seg={self.segment}>")
+
+
+class Candle(Base):
+    """OHLC(+OI) candle. Timescale hypertable partitioned on `ts`.
+    interval = '1d' (daily) or '1m' (intraday minute)."""
+    __tablename__ = "candles"
+
+    symbol: Mapped[str] = mapped_column(String(40), primary_key=True)
+    segment: Mapped[str] = mapped_column(String(16), primary_key=True)
+    interval: Mapped[str] = mapped_column(String(4), primary_key=True)   # '1d' / '1m'
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    __table_args__ = (Index("ix_candles_symbol_interval_ts", "symbol", "interval", "ts"),)
+
+    def __repr__(self) -> str:
+        return f"<Candle {self.symbol} {self.interval} {self.ts:%Y-%m-%d} c={self.close}>"
