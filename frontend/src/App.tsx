@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJSON, type Health, type Universe } from './api'
-import CandleChart from './components/CandleChart'
+import { getJSON, type Health, type History, type Universe } from './api'
+import HistoryTable from './components/HistoryTable'
 import { useLive } from './hooks/useLive'
+
+function fmt(n: number | null | undefined): string {
+  return n == null
+    ? '—'
+    : n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 function Dot({ ok }: { ok: boolean }) {
   return (
@@ -26,6 +32,13 @@ export default function App() {
     queryFn: () => getJSON<Universe>('/universe'),
   })
   const live = useLive(selected)
+  const hist = useQuery({
+    queryKey: ['history', selected],
+    queryFn: () =>
+      getJSON<History>(`/history?symbol=${encodeURIComponent(selected!)}&interval=1d`),
+    enabled: !!selected,
+  })
+  const latest = hist.data?.candles.at(-1)
 
   return (
     <div className="flex h-full flex-col">
@@ -128,8 +141,12 @@ export default function App() {
                     <div className="mt-1 font-mono text-lg text-slate-600">—</div>
                   )}
                 </div>
-                {/* Placeholders — Phase 3 */}
-                {['Premium', 'PCR', 'Max Pain'].map((k) => (
+                {/* Latest-day data (from history) */}
+                {[
+                  ['Close', fmt(latest?.close)],
+                  ['Day High', fmt(latest?.high)],
+                  ['Day Low', fmt(latest?.low)],
+                ].map(([k, v]) => (
                   <div
                     key={k}
                     className="rounded-lg border border-border bg-panel p-4"
@@ -137,16 +154,31 @@ export default function App() {
                     <div className="text-[11px] uppercase tracking-wider text-slate-500">
                       {k}
                     </div>
-                    <div className="mt-1 font-mono text-lg text-slate-600">—</div>
+                    <div className="mt-1 font-mono text-lg text-slate-300">{v}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-6 rounded-lg border border-border bg-panel p-3">
-                <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Price history — candle + volume
+              <div className="mt-6">
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Din-b-din data — OHLC (latest upar)
+                  </span>
+                  {hist.data && (
+                    <span className="text-[11px] text-slate-600">
+                      {hist.data.count} din
+                    </span>
+                  )}
                 </div>
-                <CandleChart symbol={selected} />
+                {hist.isLoading && (
+                  <div className="text-sm text-slate-500">load ho raha…</div>
+                )}
+                {hist.isError && (
+                  <div className="text-sm text-down">
+                    {selected}: koi history nahi (mock/backfill chala?)
+                  </div>
+                )}
+                {hist.data && <HistoryTable candles={hist.data.candles} />}
               </div>
             </div>
           ) : (
