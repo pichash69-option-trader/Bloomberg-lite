@@ -1,4 +1,6 @@
-import { type DepthLevel, type LiveState } from '../api'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getJSON, type DepthLevel, type LiveState, type OptDepth } from '../api'
 
 function n(v: number | undefined, d = 2): string {
   return (v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -88,6 +90,16 @@ function DepthLadder({ depth }: { depth: DepthLevel[] }) {
 }
 
 export default function LiveTerminal({ live }: { live: LiveState | null }) {
+  const [depthStrike, setDepthStrike] = useState<number | null>(null)
+  const depthQ = useQuery({
+    queryKey: ['optdepth', live?.symbol, depthStrike],
+    queryFn: () =>
+      getJSON<OptDepth>(
+        `/optdepth?symbol=${encodeURIComponent(live!.symbol)}&strike=${depthStrike}`,
+      ),
+    enabled: !!live && depthStrike != null,
+  })
+
   if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
   const { cash: c, futures: f, options: o } = live
   const up = c.chg >= 0
@@ -288,8 +300,20 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
                     </td>
                     <td className="px-2 py-1 text-slate-400">{oi(s.ce.oi)}</td>
                     <td className="px-2 py-1 text-up">{n(s.ce.ltp)}</td>
-                    <td className={`px-2 py-1 text-center font-semibold ${atm ? 'text-indigo' : 'text-slate-300'}`}>
-                      {n(s.strike, 0)}
+                    <td className="px-2 py-1 text-center">
+                      <button
+                        onClick={() => setDepthStrike(depthStrike === s.strike ? null : s.strike)}
+                        className={`font-semibold hover:underline ${
+                          depthStrike === s.strike
+                            ? 'text-purple underline'
+                            : atm
+                              ? 'text-indigo'
+                              : 'text-slate-300'
+                        }`}
+                        title="depth dekho"
+                      >
+                        {n(s.strike, 0)}
+                      </button>
                     </td>
                     <td className="px-2 py-1 text-down">{n(s.pe.ltp)}</td>
                     <td className="px-2 py-1 text-slate-400">{oi(s.pe.oi)}</td>
@@ -302,8 +326,30 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-[11px] text-slate-600">
+          💡 Kisi <b>strike par click</b> karo → uska CE &amp; PE ka full 5-level depth.
+        </p>
+
+        {/* Option depth (on-demand, per strike) */}
+        {depthStrike != null && depthQ.data && (
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <div>
+              <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-up">
+                {depthStrike} CE depth (5) · LTP {n(depthQ.data.ce.ltp)}
+              </div>
+              <DepthLadder depth={depthQ.data.ce.depth} />
+            </div>
+            <div>
+              <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-down">
+                {depthStrike} PE depth (5) · LTP {n(depthQ.data.pe.ltp)}
+              </div>
+              <DepthLadder depth={depthQ.data.pe.depth} />
+            </div>
+          </div>
+        )}
+
         {atmRow && (
-          <p className="mt-2 text-[11px] text-slate-600">
+          <p className="mt-3 text-[11px] text-slate-600">
             ATM {o.atm} greeks — CE: Δ {atmRow.ce.delta} Γ {atmRow.ce.gamma} Θ {atmRow.ce.theta} Vega{' '}
             {atmRow.ce.vega} Rho {atmRow.ce.rho} · PE: Δ {atmRow.pe.delta} Θ {atmRow.pe.theta} Rho{' '}
             {atmRow.pe.rho}

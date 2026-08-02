@@ -42,6 +42,15 @@ export type ChainRow = { strike: number; ce: OptionLeg; pe: OptionLeg }
 
 export type FutExpiry = { label: string; ltp: number; oi: number; premium: number }
 
+export type OptDepthSide = {
+  ltp: number
+  bid: number
+  ask: number
+  oi: number
+  depth: DepthLevel[]
+}
+export type OptDepth = { symbol: string; strike: number; ce: OptDepthSide; pe: OptDepthSide }
+
 // ---- Live-math payload (Cash / Futures / Options), pushed every ~1.5s ----
 export type CashLive = {
   ltp: number

@@ -185,6 +185,35 @@ async def chain(symbol: str = Query(...)):
     return await build_chain(symbol)
 
 
+@app.get("/optdepth")
+async def optdepth(symbol: str = Query(...), strike: float = Query(...)):
+    """Full 5-level market depth for a strike's CE & PE (on-demand).
+
+    Mock: synthesised. Real: dhan.quote_data for that option's securityId (1/sec)."""
+    import random
+
+    from app.chain import _spot, synth_chain
+    from app.mock_feed import _depth
+
+    ch = synth_chain(symbol, await _spot(symbol))
+    row = next((s for s in ch["strikes"] if s["strike"] == strike), None)
+    if row is None:
+        raise HTTPException(404, f"strike {strike} not in {symbol} chain")
+
+    def side(leg, seed):
+        rng = random.Random(seed & 0xFFFFFFFF)
+        return {
+            "ltp": leg["ltp"], "bid": leg["bid"], "ask": leg["ask"], "oi": leg["oi"],
+            "depth": _depth(leg["ltp"], max(0.05, leg["ltp"] * 0.02), 0.05, rng),
+        }
+
+    return {
+        "symbol": symbol, "strike": strike,
+        "ce": side(row["ce"], hash((symbol, strike, "CE"))),
+        "pe": side(row["pe"], hash((symbol, strike, "PE"))),
+    }
+
+
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket, symbol: str = Query(...)):
     """Live tick stream for the selected symbol (mock feed → Redis → WS)."""
