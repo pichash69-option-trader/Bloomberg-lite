@@ -3,7 +3,18 @@ import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
 import LiveTerminal from './components/LiveTerminal'
 import WatchlistGrid from './components/WatchlistGrid'
+import MoversBar from './components/MoversBar'
 import { useLive } from './hooks/useLive'
+
+type Alert = {
+  id: number
+  symbol: string
+  metric: 'LTP' | 'PCR' | 'Z'
+  op: '>' | '<'
+  value: number
+  triggered?: boolean
+  at?: string
+}
 
 function Dot({ ok }: { ok: boolean }) {
   return (
@@ -41,6 +52,45 @@ export default function App() {
     queryFn: () => getJSON<Universe>('/universe'),
   })
   const live = useLive(selected)
+
+  // ---- Alerts ----
+  const [alerts, setAlerts] = useState<Alert[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('alerts') || '[]')
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem('alerts', JSON.stringify(alerts))
+  }, [alerts])
+  const [alertsOpen, setAlertsOpen] = useState(false)
+  const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([])
+  const fire = (msg: string) => {
+    const id = Date.now() + Math.random()
+    setToasts((t) => [...t, { id, msg }])
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
+  }
+  useEffect(() => {
+    if (!live) return
+    const vals = { LTP: live.cash.ltp, PCR: live.options.pcr, Z: live.analytics.z_score }
+    setAlerts((as) =>
+      as.map((a) => {
+        if (a.triggered || a.symbol !== live.symbol) return a
+        const v = vals[a.metric]
+        const hit = a.op === '>' ? v > a.value : v < a.value
+        if (hit) {
+          fire(`🔔 ${a.symbol} ${a.metric} ${a.op} ${a.value} (now ${v})`)
+          return { ...a, triggered: true, at: new Date().toLocaleTimeString() }
+        }
+        return a
+      }),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live?.cash.ltp, live?.options.pcr])
+  const [aMetric, setAMetric] = useState<'LTP' | 'PCR' | 'Z'>('LTP')
+  const [aOp, setAOp] = useState<'>' | '<'>('>')
+  const [aVal, setAVal] = useState(0)
 
   const all = uni.data?.underlyings ?? []
   const q = search.trim().toLowerCase()
@@ -149,6 +199,90 @@ export default function App() {
           )}
         </div>
 
+        {/* Alerts tab */}
+        <div className="relative">
+          <button
+            onClick={() => setAlertsOpen((o) => !o)}
+            className={`rounded px-3 py-1.5 text-sm ${
+              alertsOpen ? 'bg-indigo/20 text-indigo' : 'bg-white/5 text-slate-300 hover:bg-white/10'
+            }`}
+          >
+            🔔 Alerts ({alerts.length})
+          </button>
+          {alertsOpen && (
+            <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-border bg-panel p-2 shadow-xl">
+              <div className="mb-2 flex items-center gap-1 text-xs">
+                <span className="text-slate-500">{selected ?? '(select stock)'}</span>
+                <select
+                  value={aMetric}
+                  onChange={(e) => setAMetric(e.target.value as 'LTP' | 'PCR' | 'Z')}
+                  className="rounded border border-border bg-black/30 px-1.5 py-1 text-slate-300"
+                >
+                  <option value="LTP">LTP</option>
+                  <option value="PCR">PCR</option>
+                  <option value="Z">Z-score</option>
+                </select>
+                <select
+                  value={aOp}
+                  onChange={(e) => setAOp(e.target.value as '>' | '<')}
+                  className="rounded border border-border bg-black/30 px-1.5 py-1 text-slate-300"
+                >
+                  <option value=">">&gt;</option>
+                  <option value="<">&lt;</option>
+                </select>
+                <input
+                  type="number"
+                  value={aVal}
+                  onChange={(e) => setAVal(parseFloat(e.target.value) || 0)}
+                  className="w-16 rounded border border-border bg-black/30 px-1.5 py-1 font-mono text-slate-200"
+                />
+                <button
+                  disabled={!selected}
+                  onClick={() =>
+                    selected &&
+                    setAlerts((as) => [
+                      ...as,
+                      { id: Date.now(), symbol: selected, metric: aMetric, op: aOp, value: aVal },
+                    ])
+                  }
+                  className="rounded bg-indigo/20 px-2 py-1 text-indigo disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                {alerts.length === 0 ? (
+                  <div className="px-1 py-2 text-xs text-slate-500">Koi alert nahi.</div>
+                ) : (
+                  alerts.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex items-center justify-between border-t border-border/50 py-1 text-xs"
+                    >
+                      <span className="font-mono text-slate-300">
+                        {a.symbol} {a.metric} {a.op} {a.value}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {a.triggered ? (
+                          <span className="text-up">✓</span>
+                        ) : (
+                          <span className="text-slate-600">•</span>
+                        )}
+                        <button
+                          onClick={() => setAlerts((as) => as.filter((x) => x.id !== a.id))}
+                          className="text-slate-500 hover:text-down"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Status */}
         <div className="ml-auto flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
@@ -167,6 +301,9 @@ export default function App() {
           </span>
         </div>
       </header>
+
+      {/* Movers strip */}
+      <MoversBar onSelect={setSelected} />
 
       {/* Main panel (full width) */}
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -219,6 +356,18 @@ export default function App() {
       <footer className="border-t border-border bg-panel px-5 py-2 text-center text-[11px] text-slate-600">
         ⚠️ Educational / research tool — trading advice nahi. Data: DhanHQ.
       </footer>
+
+      {/* Alert toasts */}
+      <div className="pointer-events-none fixed right-4 top-20 z-50 flex flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="pointer-events-auto rounded-lg border border-indigo/40 bg-panel px-4 py-2 text-sm text-slate-200 shadow-lg"
+          >
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
