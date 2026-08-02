@@ -35,3 +35,29 @@ export type Live = {
   ts: string
   mock: boolean
 }
+
+export type OptionLeg = {
+  ltp: number
+  oi: number
+  volume: number
+  iv: number
+  delta: number
+  gamma: number
+  theta: number
+  vega: number
+  rho: number
+}
+export type ChainRow = { strike: number; ce: OptionLeg; pe: OptionLeg }
+export type Chain = {
+  symbol: string
+  spot: number
+  atm: number
+  expiry_days: number
+  pcr: number
+  max_pain: number
+  futures_premium: number
+  total_ce_oi: number
+  total_pe_oi: number
+  strikes: ChainRow[]
+  mock: boolean
+}

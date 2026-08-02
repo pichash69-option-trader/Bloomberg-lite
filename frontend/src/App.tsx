@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJSON, type Health, type History, type Universe } from './api'
+import { getJSON, type Chain, type Health, type History, type Universe } from './api'
 import HistoryTable from './components/HistoryTable'
+import ChainTable from './components/ChainTable'
 import { useLive } from './hooks/useLive'
 
 function fmt(n: number | null | undefined): string {
@@ -48,6 +49,13 @@ export default function App() {
   const avgVol = vols.length
     ? Math.round(vols.reduce((a, b) => a + b, 0) / vols.length)
     : null
+  const chainQ = useQuery({
+    queryKey: ['chain', selected],
+    queryFn: () => getJSON<Chain>(`/chain?symbol=${encodeURIComponent(selected!)}`),
+    enabled: !!selected,
+    refetchInterval: 3000, // matches DhanHQ option-chain rate limit
+  })
+  const chain = chainQ.data
 
   return (
     <div className="flex h-full flex-col">
@@ -205,6 +213,44 @@ export default function App() {
                   </div>
                 )}
                 {hist.data && <HistoryTable candles={hist.data.candles} />}
+              </div>
+
+              {/* Option chain — PCR / max-pain / greeks */}
+              <div className="mt-6">
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Option chain — PCR / max-pain / greeks
+                  </span>
+                  {chain && (
+                    <span className="text-[11px] text-slate-600">
+                      ~{chain.expiry_days}d expiry · 3s refresh · mock
+                    </span>
+                  )}
+                </div>
+                <div className="mb-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {[
+                    ['PCR', chain ? chain.pcr.toFixed(2) : '—'],
+                    ['Max Pain', chain ? fmt(chain.max_pain) : '—'],
+                    [
+                      'Fut Premium',
+                      chain
+                        ? `${chain.futures_premium >= 0 ? '+' : ''}${fmt(chain.futures_premium)}`
+                        : '—',
+                    ],
+                    ['ATM', chain ? fmt(chain.atm) : '—'],
+                  ].map(([k, v]) => (
+                    <div key={k} className="rounded-lg border border-border bg-panel p-4">
+                      <div className="text-[11px] uppercase tracking-wider text-slate-500">
+                        {k}
+                      </div>
+                      <div className="mt-1 font-mono text-lg text-slate-300">{v}</div>
+                    </div>
+                  ))}
+                </div>
+                {chainQ.isLoading && (
+                  <div className="text-sm text-slate-500">chain load ho raha…</div>
+                )}
+                {chain && <ChainTable chain={chain} />}
               </div>
             </div>
           ) : (

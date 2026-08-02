@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app import db, redis_store
+from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
 from app.mock_feed import feed
 from app.models import Candle
@@ -94,6 +95,12 @@ async def history(symbol: str = Query(...), interval: str = Query("1d")):
         raise HTTPException(404, f"No {interval} history for {symbol}")
     return {"symbol": symbol, "interval": interval,
             "count": len(candles), "candles": candles}
+
+
+@app.get("/chain")
+async def chain(symbol: str = Query(...)):
+    """Option chain + PCR + max-pain + greeks for one underlying (mock for now)."""
+    return await build_chain(symbol)
 
 
 @app.websocket("/ws/live")
