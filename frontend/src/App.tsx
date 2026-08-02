@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Chain, type Health, type History, type Universe } from './api'
 import HistoryTable from './components/HistoryTable'
@@ -35,6 +35,23 @@ function Dot({ ok }: { ok: boolean }) {
 export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [view, setView] = useState<View>('terminal')
+  const [search, setSearch] = useState('')
+  const [watch, setWatch] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('watchlist') || '[]')
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem('watchlist', JSON.stringify(watch))
+  }, [watch])
+  const toggleWatch = (s: string) =>
+    setWatch((w) => (w.includes(s) ? w.filter((x) => x !== s) : [...w, s]))
+  const pick = (s: string) => {
+    setSelected(s)
+    setView('terminal')
+  }
 
   const health = useQuery({
     queryKey: ['health'],
@@ -121,28 +138,70 @@ export default function App() {
       {/* Body */}
       <div className="flex min-h-0 flex-1">
         {/* Picker */}
-        <aside className="w-56 shrink-0 overflow-y-auto border-r border-border bg-panel/60 p-3">
-          <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Underlyings {uni.data ? `(${uni.data.count})` : ''}
+        <aside className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-border bg-panel/60">
+          <div className="p-3 pb-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full rounded border border-border bg-black/30 px-2.5 py-1.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-indigo"
+            />
           </div>
-          <div className="space-y-0.5">
-            {uni.data?.underlyings.map((sym) => (
-              <button
-                key={sym}
-                onClick={() => setSelected(sym)}
-                className={`w-full rounded px-2.5 py-1.5 text-left text-sm transition ${
-                  selected === sym
-                    ? 'bg-indigo/20 text-indigo'
-                    : 'text-slate-300 hover:bg-white/5'
-                }`}
-              >
-                {sym}
-              </button>
-            ))}
-            {uni.isLoading && <div className="px-2 text-sm text-slate-500">loading…</div>}
-            {uni.isError && (
-              <div className="px-2 text-sm text-down">backend offline?</div>
-            )}
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+            {(() => {
+              const all = uni.data?.underlyings ?? []
+              const q = search.trim().toLowerCase()
+              const match = (s: string) => s.toLowerCase().includes(q)
+              const watched = all.filter((s) => watch.includes(s) && match(s))
+              const rest = all.filter((s) => match(s))
+
+              const row = (sym: string) => (
+                <div key={sym} className="group flex items-center">
+                  <button
+                    onClick={() => toggleWatch(sym)}
+                    className={`px-1 text-sm ${
+                      watch.includes(sym) ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'
+                    }`}
+                    title="watchlist"
+                  >
+                    {watch.includes(sym) ? '★' : '☆'}
+                  </button>
+                  <button
+                    onClick={() => pick(sym)}
+                    className={`flex-1 rounded px-2 py-1.5 text-left text-sm transition ${
+                      selected === sym
+                        ? 'bg-indigo/20 text-indigo'
+                        : 'text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    {sym}
+                  </button>
+                </div>
+              )
+
+              return (
+                <>
+                  {watched.length > 0 && (
+                    <>
+                      <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-yellow-500/70">
+                        Watchlist ({watched.length})
+                      </div>
+                      <div className="mb-3 space-y-0.5">{watched.map(row)}</div>
+                    </>
+                  )}
+                  <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Underlyings ({rest.length})
+                  </div>
+                  <div className="space-y-0.5">{rest.map(row)}</div>
+                  {uni.isLoading && (
+                    <div className="px-2 text-sm text-slate-500">loading…</div>
+                  )}
+                  {uni.isError && (
+                    <div className="px-2 text-sm text-down">backend offline?</div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </aside>
 
