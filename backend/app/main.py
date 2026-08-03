@@ -14,12 +14,17 @@ from fastapi import (FastAPI, HTTPException, Query, WebSocket,
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 
-from app import db, redis_store
+from app import db, feed as real_feed, mock_feed, redis_store
 from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
+from app.dhan_config import has_creds
 from app.dhan_config import mode as data_mode
-from app.mock_feed import feed
 from app.models import Candle, MetricSnapshot
+
+
+def _feed():
+    """Real DhanHQ feed when creds are present, else the synthetic mock feed."""
+    return real_feed.feed if has_creds() else mock_feed.feed
 
 # Windows cp1252 console safety (v1 gotcha) — safe no-op elsewhere.
 try:
@@ -247,7 +252,8 @@ async def optdepth(symbol: str = Query(...), strike: float = Query(...)):
 async def ws_live(ws: WebSocket, symbol: str = Query(...)):
     """Live tick stream for the selected symbol (mock feed → Redis → WS)."""
     await ws.accept()
-    await feed.subscribe(symbol)
+    fd = _feed()
+    await fd.subscribe(symbol)
     redis = redis_store.get_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(f"live:{symbol}")
@@ -264,4 +270,4 @@ async def ws_live(ws: WebSocket, symbol: str = Query(...)):
     finally:
         await pubsub.unsubscribe(f"live:{symbol}")
         await pubsub.aclose()
-        await feed.unsubscribe(symbol)
+        await fd.unsubscribe(symbol)
