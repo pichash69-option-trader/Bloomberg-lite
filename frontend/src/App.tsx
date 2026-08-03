@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
 import LiveTerminal from './components/LiveTerminal'
 import WatchlistGrid from './components/WatchlistGrid'
-import MarketBar from './components/MarketBar'
 import MarketIndices from './components/MarketIndices'
 import { useLive } from './hooks/useLive'
 
@@ -317,9 +316,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Market context strip — NIFTY · India VIX · breadth · live movers */}
-      <MarketBar onSelect={setSelected} />
-
       {/* Main panel (full width) */}
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
         {selected ? (
@@ -343,7 +339,7 @@ export default function App() {
                 </span>
               )}
             </div>
-            <LiveTerminal live={live} />
+            <LiveTerminal live={live} onSelect={setSelected} />
           </div>
         ) : watch.length > 0 ? (
           <div>
