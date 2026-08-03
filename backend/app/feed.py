@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-feed.py — REAL DhanHQ feed (REST): quote_data (cash+futures) + option_chain.
+feed.py — the live DhanHQ feed.
 
-Polls every 3s (Option-Chain limit is 1 req/3s) and publishes the same payload
-contract as mock_feed to Redis `live:{symbol}`. Cash/futures/options are all real;
-history-derived stats (z-score, beta, realised vol) reuse the local candles until
-real history is backfilled. Blocking dhanhq calls run in a thread executor.
+Cash + futures come from the WebSocket Full stream (sub-second, feed_ws) with a 3s
+REST quote fallback; options + circuit limits refresh via REST every 3s. Publishes
+the payload to Redis `live:{symbol}`. History-derived stats (z-score, beta, realised
+vol) use the backfilled daily candles. Blocking dhanhq calls run in a thread.
 """
 import asyncio
 import json
@@ -19,12 +19,50 @@ from app.db import SessionLocal
 from app.feed_ws import FULL, NSE_FNO, ws
 from app.greeks import greeks as bs_greeks
 from app.live_math import chain_metrics, classify_buildup
-from app.mock_feed import _beta, _daily_stats
-from app.models import Instrument
+from app.models import Candle, Instrument
 from app.redis_store import get_redis
 
 TICK_SEC = 1.0            # push cadence; WS drives sub-second cash/futures
 RISK_FREE = 0.065
+
+
+async def _daily_stats(symbol: str) -> tuple[float, float]:
+    """(mean, std) of daily returns in % — for the current-move z-score."""
+    async with SessionLocal() as session:
+        rows = await session.execute(
+            select(Candle.close).where(Candle.symbol == symbol, Candle.interval == "1d")
+            .order_by(Candle.ts))
+        closes = [float(c) for c in rows.scalars()]
+    rets = [(closes[i] / closes[i - 1] - 1) * 100 for i in range(1, len(closes))]
+    if len(rets) < 5:
+        return 0.0, 1.0
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+    return mean, math.sqrt(var) or 1.0
+
+
+async def _beta(symbol: str) -> float:
+    """Beta of the stock vs NIFTY 50 (daily returns, aligned by date)."""
+    async with SessionLocal() as session:
+        srows = (await session.execute(
+            select(Candle.ts, Candle.close).where(
+                Candle.symbol == symbol, Candle.interval == "1d").order_by(Candle.ts))).all()
+        nrows = (await session.execute(
+            select(Candle.ts, Candle.close).where(
+                Candle.symbol == "NIFTY 50", Candle.interval == "1d").order_by(Candle.ts))).all()
+    smap = {ts.date(): float(c) for ts, c in srows}
+    nmap = {ts.date(): float(c) for ts, c in nrows}
+    dates = sorted(set(smap) & set(nmap))
+    if len(dates) < 10:
+        return 1.0
+    s = [smap[d] for d in dates]
+    ni = [nmap[d] for d in dates]
+    sret = [s[i] / s[i - 1] - 1 for i in range(1, len(s))]
+    nret = [ni[i] / ni[i - 1] - 1 for i in range(1, len(ni))]
+    nmean, smean = sum(nret) / len(nret), sum(sret) / len(sret)
+    cov = sum((sret[i] - smean) * (nret[i] - nmean) for i in range(len(sret))) / len(sret)
+    var = sum((x - nmean) ** 2 for x in nret) / len(nret)
+    return round(cov / var, 2) if var else 1.0
 N_STRIKES = 8
 WS_SEG = {"NSE_EQ": 1}    # our segment -> dhanhq WS code (index via REST)
 
@@ -239,7 +277,6 @@ class RealFeed:
                     payload = {
                         "symbol": symbol,
                         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                        "mock": False,
                         "cash": {
                             "ltp": spot, "last_qty": int(cq.get("last_quantity") or 0),
                             "atp": atp, "prev_close": prev_close,

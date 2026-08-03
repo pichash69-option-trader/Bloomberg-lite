@@ -2,9 +2,9 @@
 """
 dhan_config.py — DhanHQ client + credential detection.
 
-`has_creds()` decides mock vs real everywhere: if the .env creds are missing or
-still the placeholder, the app stays on synthetic data. `get_dhan()` lazily builds
-the authenticated client only when it is actually needed.
+`has_creds()` is true only when real .env creds are present (not the placeholder);
+without them there is no live data (the UI shows the token banner). `get_dhan()`
+lazily builds the authenticated client only when it is actually needed.
 """
 from functools import lru_cache
 
@@ -33,4 +33,4 @@ def get_dhan():
 
 
 def mode() -> str:
-    return "real" if has_creds() else "mock"
+    return "real" if has_creds() else "no-creds"

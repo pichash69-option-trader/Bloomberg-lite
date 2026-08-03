@@ -258,7 +258,7 @@ export default function App() {
                 live ? 'animate-pulse bg-up' : 'bg-slate-600'
               }`}
             />
-            {live ? `LIVE · ${health.data?.mode ?? 'mock'}` : 'idle'}
+            {live ? `LIVE · ${health.data?.mode ?? 'real'}` : 'idle'}
           </span>
           <span className="hidden items-center gap-1.5 sm:flex">
             <Dot ok={!!health.data?.db} /> DB

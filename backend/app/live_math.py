@@ -2,8 +2,8 @@
 """
 live_math.py — pure-math helpers for the live engine.
 
-Used by the (mock or real) feed each tick to classify OI buildup from the price
-change and the open-interest change. Educational — no advice.
+Used by the live feed each tick to classify OI buildup from the price change and
+the open-interest change, and to derive option-chain metrics. Educational — no advice.
 """
 
 
@@ -26,8 +26,8 @@ def classify_buildup(d_price: float, d_oi: float, eps: float = 1e-9) -> str:
 
 
 def chain_metrics(strikes: list[dict], atm: float) -> dict:
-    """Derived option-chain metrics from a list of {strike, ce, pe} rows.
-    Shared by the synthetic chain (mock) and the real DhanHQ chain."""
+    """Derived option-chain metrics (PCR, max-pain, IV skew, net greeks, OI walls,
+    IV rank) from a list of {strike, ce, pe} rows."""
     tot_ce = sum(s["ce"]["oi"] for s in strikes) or 1
     tot_pe = sum(s["pe"]["oi"] for s in strikes)
 

@@ -6,16 +6,14 @@ Phase 0: /health (db + redis reachability) + /universe. Routers for history,
 live (WS), instruments, and option-chain are added in later phases.
 """
 import asyncio
-import json
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import (FastAPI, HTTPException, Query, WebSocket,
-                     WebSocketDisconnect)
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app import db, feed as real_feed, mock_feed, redis_store
+from app import db, feed as real_feed, redis_store
 from app.config import UNIVERSE, get_settings
 from app.dhan_config import has_creds
 from app.dhan_config import mode as data_mode
@@ -23,8 +21,8 @@ from app.models import Instrument
 
 
 def _feed():
-    """Real DhanHQ feed when creds are present, else the synthetic mock feed."""
-    return real_feed.feed if has_creds() else mock_feed.feed
+    """The real DhanHQ feed (no-creds shows the token banner, no live data)."""
+    return real_feed.feed
 
 # Windows cp1252 console safety (v1 gotcha) — safe no-op elsewhere.
 try:
@@ -165,66 +163,9 @@ async def market():
     return result
 
 
-@app.get("/snapshot")
-async def snapshot(symbols: str = Query(...)):
-    """Key live metrics for several underlyings (watchlist grid).
-
-    Uses the live feed from Redis if that symbol is subscribed, else a synthetic
-    snapshot from the latest close + chain."""
-    from app.chain import _spot, synth_chain
-
-    redis = redis_store.get_redis()
-    out = []
-    for sym in [s.strip() for s in symbols.split(",") if s.strip()]:
-        raw = await redis.hget(f"live:{sym}", "data")
-        if raw:
-            m = json.loads(raw)
-            out.append({
-                "symbol": sym, "ltp": m["cash"]["ltp"], "chg_pct": m["cash"]["chg_pct"],
-                "pcr": m["options"]["pcr"], "buildup": m["futures"]["buildup"], "live": True,
-            })
-        else:
-            spot = await _spot(sym)
-            ch = synth_chain(sym, spot)
-            out.append({
-                "symbol": sym, "ltp": round(spot, 2), "chg_pct": 0.0,
-                "pcr": ch["pcr"], "buildup": "—", "live": False,
-            })
-    return {"snapshots": out}
-
-
-@app.get("/optdepth")
-async def optdepth(symbol: str = Query(...), strike: float = Query(...)):
-    """Full 5-level market depth for a strike's CE & PE (on-demand).
-
-    Mock: synthesised. Real: dhan.quote_data for that option's securityId (1/sec)."""
-    import random
-
-    from app.chain import _spot, synth_chain
-    from app.mock_feed import _depth
-
-    ch = synth_chain(symbol, await _spot(symbol))
-    row = next((s for s in ch["strikes"] if s["strike"] == strike), None)
-    if row is None:
-        raise HTTPException(404, f"strike {strike} not in {symbol} chain")
-
-    def side(leg, seed):
-        rng = random.Random(seed & 0xFFFFFFFF)
-        return {
-            "ltp": leg["ltp"], "bid": leg["bid"], "ask": leg["ask"], "oi": leg["oi"],
-            "depth": _depth(leg["ltp"], max(0.05, leg["ltp"] * 0.02), 0.05, rng),
-        }
-
-    return {
-        "symbol": symbol, "strike": strike,
-        "ce": side(row["ce"], hash((symbol, strike, "CE"))),
-        "pe": side(row["pe"], hash((symbol, strike, "PE"))),
-    }
-
-
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket, symbol: str = Query(...)):
-    """Live tick stream for the selected symbol (mock feed → Redis → WS)."""
+    """Live tick stream for the selected symbol (DhanHQ feed → Redis → WS)."""
     await ws.accept()
     fd = _feed()
     await fd.subscribe(symbol)
