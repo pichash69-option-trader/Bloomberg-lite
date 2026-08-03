@@ -16,17 +16,31 @@ export function useLive(symbol: string | null): LiveState | null {
       return
     }
     setLive(null)
-    const ws = new WebSocket(`${WS_URL}/ws/live?symbol=${encodeURIComponent(symbol)}`)
-    wsRef.current = ws
-    ws.onmessage = (e) => {
-      try {
-        setLive(JSON.parse(e.data) as LiveState)
-      } catch {
-        /* ignore malformed frame */
+    let closed = false
+    let retry: ReturnType<typeof setTimeout>
+
+    const connect = () => {
+      const ws = new WebSocket(`${WS_URL}/ws/live?symbol=${encodeURIComponent(symbol)}`)
+      wsRef.current = ws
+      ws.onmessage = (e) => {
+        try {
+          setLive(JSON.parse(e.data) as LiveState)
+        } catch {
+          /* ignore malformed frame */
+        }
       }
+      // Auto-reconnect on drop (backend restart / network blip) until unmount.
+      ws.onclose = () => {
+        if (!closed) retry = setTimeout(connect, 2000)
+      }
+      ws.onerror = () => ws.close()
     }
+    connect()
+
     return () => {
-      ws.close()
+      closed = true
+      clearTimeout(retry)
+      wsRef.current?.close()
       wsRef.current = null
     }
   }, [symbol])
