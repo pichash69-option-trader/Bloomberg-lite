@@ -302,6 +302,15 @@ export default function App() {
         </div>
       </header>
 
+      {/* Token-expired banner */}
+      {health.data?.auth === false && (
+        <div className="border-b border-down/40 bg-down/15 px-4 py-2 text-center text-sm text-down">
+          🔑 DhanHQ token invalid/expired — real data ruk gaya. Naya token generate karke{' '}
+          <code className="font-mono">.env</code> update karo, phir{' '}
+          <code className="font-mono">docker compose up -d backend</code>.
+        </div>
+      )}
+
       {/* Market context strip — NIFTY · India VIX · breadth · live movers */}
       <MarketBar onSelect={setSelected} />
 

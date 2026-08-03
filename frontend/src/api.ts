@@ -8,7 +8,13 @@ export async function getJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export type Health = { status: string; db: boolean; redis: boolean; mode: string }
+export type Health = {
+  status: string
+  db: boolean
+  redis: boolean
+  mode: string
+  auth: boolean | null
+}
 export type Universe = { count: number; underlyings: string[] }
 
 // ---- Market depth ----

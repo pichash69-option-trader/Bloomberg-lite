@@ -61,9 +61,30 @@ app.add_middleware(
 )
 
 
+_auth_cache = {"ts": 0.0, "valid": None}
+
+
+async def _auth_valid():
+    """Cached (60s) DhanHQ token validity — None if no creds, else bool."""
+    import time as _t
+
+    if not has_creds():
+        return None
+    if _t.time() - _auth_cache["ts"] < 60 and _auth_cache["valid"] is not None:
+        return _auth_cache["valid"]
+    from app.dhan_config import get_dhan
+    try:
+        r = await asyncio.to_thread(get_dhan().get_fund_limits)
+        _auth_cache["valid"] = r.get("status") == "success"
+    except Exception:
+        _auth_cache["valid"] = False
+    _auth_cache["ts"] = _t.time()
+    return _auth_cache["valid"]
+
+
 @app.get("/health")
 async def health():
-    """Liveness + dependency reachability."""
+    """Liveness + dependency reachability + Dhan token validity."""
     db_ok = redis_ok = False
     try:
         db_ok = await db.ping()
@@ -74,7 +95,8 @@ async def health():
     except Exception:
         pass
     status = "ok" if (db_ok and redis_ok) else "degraded"
-    return {"status": status, "db": db_ok, "redis": redis_ok, "mode": data_mode()}
+    return {"status": status, "db": db_ok, "redis": redis_ok,
+            "mode": data_mode(), "auth": await _auth_valid()}
 
 
 @app.get("/universe")
