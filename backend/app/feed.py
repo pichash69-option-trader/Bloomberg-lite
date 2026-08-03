@@ -18,7 +18,7 @@ from app.dhan_config import get_dhan
 from app.db import SessionLocal
 from app.feed_ws import FULL, NSE_FNO, ws
 from app.greeks import greeks as bs_greeks
-from app.live_math import classify_buildup
+from app.live_math import chain_metrics, classify_buildup
 from app.mock_feed import _beta, _daily_stats
 from app.models import Instrument
 from app.redis_store import get_redis
@@ -119,32 +119,9 @@ def _build_options(oc: dict, spot: float, expiry: str) -> dict:
             "pe": _map_leg(pe, spot, K, T, "PE"),
         })
 
-    tot_ce = sum(s["ce"]["oi"] for s in strikes) or 1
-    tot_pe = sum(s["pe"]["oi"] for s in strikes)
-    pcr = round(tot_pe / tot_ce, 2)
-
-    def payout(at):
-        return sum(s["ce"]["oi"] * max(at - s["strike"], 0)
-                   + s["pe"]["oi"] * max(s["strike"] - at, 0) for s in strikes)
-
-    max_pain = min((s["strike"] for s in strikes), key=payout)
-    below = [s["pe"]["iv"] for s in strikes if s["strike"] < atm]
-    above = [s["ce"]["iv"] for s in strikes if s["strike"] > atm]
-    iv_skew = round((sum(below) / len(below) if below else 0)
-                    - (sum(above) / len(above) if above else 0), 2)
-    net_delta = round(sum(s["ce"]["oi"] * s["ce"]["delta"]
-                          + s["pe"]["oi"] * s["pe"]["delta"] for s in strikes))
-    net_gamma = round(sum((s["ce"]["oi"] + s["pe"]["oi"]) * s["ce"]["gamma"] for s in strikes))
-    ce_wall = max(strikes, key=lambda s: s["ce"]["oi"])["strike"]
-    pe_wall = max(strikes, key=lambda s: s["pe"]["oi"])["strike"]
-    atm_iv = next((s["ce"]["iv"] for s in strikes if s["strike"] == atm), 0.0)
-    iv_rank = round(min(100.0, max(0.0, (atm_iv - 12) / (45 - 12) * 100)), 0)
     return {
-        "atm": atm, "pcr": pcr, "max_pain": max_pain,
-        "total_ce_oi": int(tot_ce), "total_pe_oi": int(tot_pe),
-        "iv_skew": iv_skew, "net_delta": net_delta, "net_gamma": net_gamma,
-        "ce_wall": ce_wall, "pe_wall": pe_wall, "iv_rank": iv_rank,
-        "atm_iv": atm_iv, "strikes": strikes,
+        "atm": atm, "strikes": strikes,
+        **chain_metrics(strikes, atm),
     }
 
 

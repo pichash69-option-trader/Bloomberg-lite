@@ -39,19 +39,6 @@ class Instrument(Base):
                 f"id={self.security_id} seg={self.segment}>")
 
 
-class MetricSnapshot(Base):
-    """Daily snapshot of derived metrics per underlying (PCR/max-pain trend).
-    Dhan doesn't give PCR/max-pain history, so this builds up from app-start day."""
-    __tablename__ = "metric_snapshots"
-
-    symbol: Mapped[str] = mapped_column(String(40), primary_key=True)
-    date: Mapped[str] = mapped_column(String(10), primary_key=True)   # YYYY-MM-DD
-    pcr: Mapped[float] = mapped_column(Float)
-    max_pain: Mapped[float] = mapped_column(Float)
-    futures_premium: Mapped[float] = mapped_column(Float)
-    spot_close: Mapped[float] = mapped_column(Float)
-
-
 class Candle(Base):
     """OHLC(+OI) candle. Timescale hypertable partitioned on `ts`.
     interval = '1d' (daily) or '1m' (intraday minute)."""

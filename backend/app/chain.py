@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.greeks import bs_price, greeks
+from app.live_math import chain_metrics
 from app.models import Candle
 from app.redis_store import get_redis
 
@@ -72,11 +73,6 @@ def _leg(spot, K, T, iv, opt, oi, rng):
     }
 
 
-async def build_chain(symbol: str) -> dict:
-    """Async wrapper: resolve live/last spot, then build the chain."""
-    return synth_chain(symbol, await _spot(symbol))
-
-
 def synth_chain(symbol: str, spot: float) -> dict:
     """Synthetic option chain around `spot` (sync, reusable every tick)."""
     step = strike_step(spot)
@@ -101,54 +97,10 @@ def synth_chain(symbol: str, spot: float) -> dict:
             "pe": _leg(spot, K, T, iv, "PE", pe_oi, rng),
         })
 
-    tot_ce_oi = sum(s["ce"]["oi"] for s in strikes) or 1
-    tot_pe_oi = sum(s["pe"]["oi"] for s in strikes)
-    pcr = round(tot_pe_oi / tot_ce_oi, 2)
-
-    # Max pain = strike minimising total payout to option holders (writer loss).
-    def payout(at: float) -> float:
-        return sum(s["ce"]["oi"] * max(at - s["strike"], 0)
-                   + s["pe"]["oi"] * max(s["strike"] - at, 0) for s in strikes)
-
-    max_pain = min((s["strike"] for s in strikes), key=payout)
-
-    # Mock futures premium (fut slightly rich vs spot).
-    fut = spot * (1 + rng.uniform(-0.001, 0.004))
-    premium = round(fut - spot, 2)
-
-    # Derived: IV skew (avg OTM-put IV − avg OTM-call IV) + net Greeks exposure.
-    below = [s["pe"]["iv"] for s in strikes if s["strike"] < atm]
-    above = [s["ce"]["iv"] for s in strikes if s["strike"] > atm]
-    iv_skew = round((sum(below) / len(below) if below else 0)
-                    - (sum(above) / len(above) if above else 0), 2)
-    net_delta = round(sum(s["ce"]["oi"] * s["ce"]["delta"]
-                          + s["pe"]["oi"] * s["pe"]["delta"] for s in strikes))
-    net_gamma = round(sum((s["ce"]["oi"] + s["pe"]["oi"]) * s["ce"]["gamma"]
-                          for s in strikes))
-
-    # OI walls: highest-OI strikes act as resistance (CE) / support (PE).
-    ce_wall = max(strikes, key=lambda s: s["ce"]["oi"])["strike"]
-    pe_wall = max(strikes, key=lambda s: s["pe"]["oi"])["strike"]
-    atm_iv_pct = next((s["ce"]["iv"] for s in strikes if s["strike"] == atm), 20.0)
-    # IV rank: where ATM IV sits in a plausible band (real = vs IV history).
-    iv_rank = round(min(100.0, max(0.0, (atm_iv_pct - 12) / (45 - 12) * 100)), 0)
-
+    premium = round(spot * rng.uniform(-0.001, 0.004), 2)   # mock futures premium
     return {
-        "symbol": symbol,
-        "spot": round(spot, 2),
-        "atm": atm,
-        "expiry_days": EXPIRY_DAYS,
-        "pcr": pcr,
-        "max_pain": max_pain,
-        "futures_premium": premium,
-        "total_ce_oi": int(tot_ce_oi),
-        "total_pe_oi": int(tot_pe_oi),
-        "iv_skew": iv_skew,
-        "net_delta": net_delta,
-        "net_gamma": net_gamma,
-        "ce_wall": ce_wall,
-        "pe_wall": pe_wall,
-        "iv_rank": iv_rank,
-        "strikes": strikes,
-        "mock": True,
+        "symbol": symbol, "spot": round(spot, 2), "atm": atm,
+        "expiry_days": EXPIRY_DAYS, "futures_premium": premium,
+        "strikes": strikes, "mock": True,
+        **chain_metrics(strikes, atm),
     }

@@ -13,14 +13,13 @@ from contextlib import asynccontextmanager
 from fastapi import (FastAPI, HTTPException, Query, WebSocket,
                      WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app import db, feed as real_feed, mock_feed, redis_store
-from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
 from app.dhan_config import has_creds
 from app.dhan_config import mode as data_mode
-from app.models import Candle, Instrument, MetricSnapshot
+from app.models import Instrument
 
 
 def _feed():
@@ -103,115 +102,6 @@ async def health():
 async def universe():
     """NIFTY 50 index + 50 stocks (51 underlyings)."""
     return {"count": len(UNIVERSE), "underlyings": UNIVERSE}
-
-
-@app.get("/history")
-async def history(symbol: str = Query(...), interval: str = Query("1d")):
-    """Candle history for one underlying (from Postgres/Timescale)."""
-    async with db.SessionLocal() as session:
-        rows = await session.execute(
-            select(Candle)
-            .where(Candle.symbol == symbol, Candle.interval == interval)
-            .order_by(Candle.ts))
-        candles = [
-            {
-                "time": c.ts.strftime("%Y-%m-%d"),
-                "open": c.open, "high": c.high, "low": c.low, "close": c.close,
-                "volume": c.volume,
-            }
-            for c in rows.scalars()
-        ]
-    if not candles:
-        raise HTTPException(404, f"No {interval} history for {symbol}")
-    return {"symbol": symbol, "interval": interval,
-            "count": len(candles), "candles": candles}
-
-
-@app.get("/stats")
-async def stats():
-    """Pure-math per-stock statistics across the 50 stocks (from daily candles)."""
-    import numpy as np
-    import pandas as pd
-
-    async with db.SessionLocal() as session:
-        rows = (await session.execute(text(
-            "SELECT symbol, ts, close FROM candles "
-            "WHERE interval='1d' AND segment='NSE_EQ' ORDER BY symbol, ts"))).all()
-
-    df = pd.DataFrame(rows, columns=["symbol", "ts", "close"])
-    out = []
-    for sym, g in df.groupby("symbol"):
-        c = g["close"].astype(float).reset_index(drop=True)
-        if len(c) < 30:
-            continue
-        ret = c.pct_change().dropna()
-        vol = float(ret.std())
-        mean = float(ret.mean())
-        last, first = float(c.iloc[-1]), float(c.iloc[0])
-        out.append({
-            "symbol": sym,
-            "last": round(last, 2),
-            "ret_1w": round((last / float(c.iloc[-6]) - 1) * 100, 2) if len(c) >= 6 else None,
-            "ret_1m": round((last / float(c.iloc[-22]) - 1) * 100, 2) if len(c) >= 22 else None,
-            "cum_return": round((last / first - 1) * 100, 2),
-            "ann_vol": round(vol * np.sqrt(252) * 100, 2),
-            "sharpe": round(mean / vol, 2) if vol > 0 else 0.0,
-            "max_dd": round(float((c / c.cummax() - 1).min()) * 100, 2),
-        })
-    return {"count": len(out), "stats": out}
-
-
-@app.get("/snapshots")
-async def snapshots(symbol: str = Query(...)):
-    """Daily PCR / max-pain / premium trend for one underlying."""
-    async with db.SessionLocal() as session:
-        rows = await session.execute(
-            select(MetricSnapshot).where(MetricSnapshot.symbol == symbol)
-            .order_by(MetricSnapshot.date))
-        data = [
-            {
-                "date": r.date, "pcr": r.pcr, "max_pain": r.max_pain,
-                "futures_premium": r.futures_premium, "spot_close": r.spot_close,
-            }
-            for r in rows.scalars()
-        ]
-    return {"symbol": symbol, "count": len(data), "snapshots": data}
-
-
-@app.get("/movers")
-async def movers(limit: int = 6):
-    """Top gainers/losers across the 50 stocks (latest daily close vs previous)."""
-    sql = text("""
-        WITH ranked AS (
-            SELECT symbol, close,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY ts DESC) AS rn
-            FROM candles
-            WHERE interval = '1d' AND segment = 'NSE_EQ'
-        )
-        SELECT symbol,
-               MAX(close) FILTER (WHERE rn = 1) AS last,
-               MAX(close) FILTER (WHERE rn = 2) AS prev
-        FROM ranked WHERE rn <= 2 GROUP BY symbol
-    """)
-    async with db.SessionLocal() as session:
-        rows = (await session.execute(sql)).all()
-
-    items = []
-    for sym, last, prev in rows:
-        if last is not None and prev:
-            items.append({
-                "symbol": sym,
-                "last": round(float(last), 2),
-                "chg_pct": round((float(last) - float(prev)) / float(prev) * 100, 2),
-            })
-    items.sort(key=lambda x: x["chg_pct"], reverse=True)
-    return {"gainers": items[:limit], "losers": list(reversed(items[-limit:]))}
-
-
-@app.get("/chain")
-async def chain(symbol: str = Query(...)):
-    """Option chain + PCR + max-pain + greeks for one underlying (mock for now)."""
-    return await build_chain(symbol)
 
 
 @app.get("/market")
