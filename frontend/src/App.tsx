@@ -4,6 +4,7 @@ import { getJSON, type Health, type Universe } from './api'
 import LiveTerminal from './components/LiveTerminal'
 import WatchlistGrid from './components/WatchlistGrid'
 import MarketBar from './components/MarketBar'
+import MarketIndices from './components/MarketIndices'
 import { useLive } from './hooks/useLive'
 
 type Alert = {
@@ -283,8 +284,13 @@ export default function App() {
           )}
         </div>
 
+        {/* Market indices — NIFTY · India VIX · Breadth */}
+        <div className="ml-auto">
+          <MarketIndices />
+        </div>
+
         {/* Status */}
-        <div className="ml-auto flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
             <span
               className={`inline-block h-1.5 w-1.5 rounded-full ${
