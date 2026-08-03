@@ -1,24 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-history.py — backfill daily OHLC(+OI) candles from DhanHQ into Postgres/Timescale.
+history.py — backfill REAL daily OHLC candles from DhanHQ into candles (Timescale).
 
-For every underlying's spot (equity or index) we call DhanHQ's historical endpoint
-  POST https://api.dhan.co/v2/charts/historical
-and store the candles in the `candles` hypertable (interval '1d'). Re-runnable and
-idempotent (upsert on the primary key), so it fills gaps without duplicates.
+For every underlying's spot (equity or index) it calls DhanHQ historical_daily_data
+and upserts into the `candles` hypertable (interval '1d'). Idempotent + throttled.
 
-Run (inside the backend container, after creds are set in .env):
-    python -m app.history                 # backfill all spots (default ~2 years)
+Run (inside the backend container, creds required):
+    python -m app.history
 """
 import asyncio
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
-import httpx
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.config import get_settings
+from app.dhan_config import get_dhan, has_creds
 from app.db import Base, SessionLocal, engine
 from app.models import Candle, Instrument
 
@@ -27,24 +24,12 @@ try:
 except Exception:
     pass
 
-settings = get_settings()
-
-DHAN_BASE = "https://api.dhan.co/v2"
-CHUNK_DAYS = 90          # be safe re: per-request range limits
-DEFAULT_LOOKBACK = 730   # ~2 years of daily history
-THROTTLE_SEC = 0.4       # polite gap between requests
-
-
-def _headers() -> dict:
-    return {
-        "access-token": settings.dhan_access_token,
-        "client-id": settings.dhan_client_id,
-        "Content-Type": "application/json",
-    }
+START_DATE = "2024-01-01"
+THROTTLE_SEC = 0.5
 
 
 async def ensure_candles_table() -> None:
-    """Create the candles table and turn it into a Timescale hypertable."""
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text(
@@ -54,98 +39,67 @@ async def ensure_candles_table() -> None:
 async def load_spots() -> list[Instrument]:
     async with SessionLocal() as session:
         rows = await session.execute(
-            select(Instrument).where(Instrument.kind == "spot")
-            .order_by(Instrument.symbol))
+            select(Instrument).where(Instrument.kind == "spot").order_by(Instrument.symbol))
         return list(rows.scalars())
 
 
-async def fetch_daily(client: httpx.AsyncClient, inst: Instrument,
-                      from_d: str, to_d: str) -> list[dict]:
-    """One historical call → list of candle dicts (may be empty)."""
-    body = {
-        "securityId": str(inst.security_id),
-        "exchangeSegment": inst.segment,        # NSE_EQ / IDX_I
-        "instrument": inst.instrument_type,     # EQUITY / INDEX
-        "fromDate": from_d,
-        "toDate": to_d,
-        "oi": True,
-    }
-    r = await client.post(f"{DHAN_BASE}/charts/historical",
-                          json=body, headers=_headers())
-    r.raise_for_status()
-    data = r.json() or {}
-
-    # Response = parallel arrays: open/high/low/close/volume/timestamp/open_interest
-    ts = data.get("timestamp", []) or []
+def _fetch(dhan, inst: Instrument, to_date: str) -> list[dict]:
+    r = dhan.historical_daily_data(
+        security_id=str(inst.security_id),
+        exchange_segment=inst.segment,          # NSE_EQ / IDX_I
+        instrument_type=inst.instrument_type,    # EQUITY / INDEX
+        from_date=START_DATE, to_date=to_date)
+    if r.get("status") != "success":
+        return []
+    d = r.get("data") or {}
+    ts = d.get("timestamp") or []
     out = []
     for i in range(len(ts)):
         out.append(dict(
-            symbol=inst.symbol,
-            segment=inst.segment,
-            interval="1d",
+            symbol=inst.symbol, segment=inst.segment, interval="1d",
             ts=datetime.fromtimestamp(int(ts[i]), tz=timezone.utc),
-            open=float(data["open"][i]),
-            high=float(data["high"][i]),
-            low=float(data["low"][i]),
-            close=float(data["close"][i]),
-            volume=int(data["volume"][i]) if data.get("volume") else None,
-            oi=int(data["open_interest"][i]) if data.get("open_interest") else None,
+            open=float(d["open"][i]), high=float(d["high"][i]),
+            low=float(d["low"][i]), close=float(d["close"][i]),
+            volume=int(d["volume"][i]) if d.get("volume") else None, oi=None,
         ))
     return out
 
 
-async def upsert_candles(rows: list[dict]) -> int:
+async def upsert(rows: list[dict]) -> int:
     if not rows:
         return 0
     async with SessionLocal() as session:
         for rec in rows:
             stmt = pg_insert(Candle).values(**rec).on_conflict_do_update(
                 index_elements=["symbol", "segment", "interval", "ts"],
-                set_={k: rec[k] for k in ("open", "high", "low", "close", "volume", "oi")},
-            )
+                set_={k: rec[k] for k in ("open", "high", "low", "close", "volume", "oi")})
             await session.execute(stmt)
         await session.commit()
     return len(rows)
 
 
-async def backfill_symbol(client: httpx.AsyncClient, inst: Instrument,
-                          start: date, end: date) -> int:
-    """Chunk the date range (<= CHUNK_DAYS each) and store all candles."""
-    total = 0
-    cur = start
-    while cur < end:
-        chunk_end = min(cur + timedelta(days=CHUNK_DAYS), end)
-        try:
-            candles = await fetch_daily(
-                client, inst, cur.isoformat(), chunk_end.isoformat())
-            total += await upsert_candles(candles)
-        except httpx.HTTPStatusError as e:
-            print(f"    ! {inst.symbol} {cur}..{chunk_end}: HTTP {e.response.status_code}")
-        await asyncio.sleep(THROTTLE_SEC)
-        cur = chunk_end
-    return total
-
-
-async def main(lookback_days: int = DEFAULT_LOOKBACK):
-    if not settings.dhan_access_token or "your_" in settings.dhan_access_token:
-        print("❌ DHAN creds not set. Fill DHAN_CLIENT_ID + DHAN_ACCESS_TOKEN in .env,")
-        print("   then recreate the backend: docker compose up -d backend")
+async def main():
+    if not has_creds():
+        print("❌ DHAN creds not set. Fill .env, then: docker compose up -d backend")
         return
-
     await ensure_candles_table()
+    dhan = get_dhan()
     spots = await load_spots()
-    end = date.today() + timedelta(days=1)      # toDate is non-inclusive
-    start = date.today() - timedelta(days=lookback_days)
-    print(f"Backfilling {len(spots)} spots, {start} → {date.today()} …\n")
+    today = date.today().isoformat()
+    print(f"Backfilling REAL daily history for {len(spots)} spots, {START_DATE} → {today}\n")
 
     grand = 0
-    async with httpx.AsyncClient(timeout=60) as client:
-        for i, inst in enumerate(spots, 1):
-            n = await backfill_symbol(client, inst, start, end)
+    for i, inst in enumerate(spots, 1):
+        try:
+            rows = await asyncio.to_thread(_fetch, dhan, inst, today)
+            n = await upsert(rows)
             grand += n
-            print(f"  [{i:2}/{len(spots)}] {inst.symbol:12} {n:5} candles")
+            print(f"  [{i:2}/{len(spots)}] {inst.symbol:12} {n:4} candles")
+        except Exception as e:
+            print(f"  [{i:2}/{len(spots)}] {inst.symbol:12} ERROR {e!r}"[:90])
+        await asyncio.sleep(THROTTLE_SEC)
 
-    print(f"\n✅ Done. {grand:,} candles stored across {len(spots)} underlyings.")
+    print(f"\n✅ Done. {grand:,} REAL candles stored.")
     await engine.dispose()
 
 
