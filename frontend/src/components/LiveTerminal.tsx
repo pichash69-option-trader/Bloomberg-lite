@@ -178,6 +178,8 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
     )
   }, [live?.symbol, live?.futures.buildup])
 
+  const [tab, setTab] = useState<'analytics' | 'cash' | 'futures' | 'options'>('cash')
+
   if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
   const { cash: c, futures: f, options: o, analytics: a } = live
   const up = c.chg >= 0
@@ -186,10 +188,34 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
   const zAbs = Math.abs(a?.z_score ?? 0)
   const zCls = zAbs >= 2 ? 'text-down' : zAbs >= 1 ? 'text-yellow-400' : 'text-slate-300'
 
+  const TABS = [
+    { key: 'analytics', label: 'Analytics' },
+    { key: 'cash', label: 'Cash' },
+    { key: 'futures', label: 'Futures' },
+    { key: 'options', label: 'Options' },
+  ] as const
+
   return (
     <div>
+      {/* Tab bar */}
+      <div className="mb-1 flex gap-1 border-b border-border">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+              tab === t.key
+                ? 'border-indigo text-indigo'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* ============ ANALYTICS ============ */}
-      {a && (
+      {tab === 'analytics' && a && (
         <Section title="Analytics" tag="fair-value · stats · Quant Bible §2-3, §6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <Tile label="Expected Move (1d)">
@@ -211,6 +237,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
             </Tile>
             <Tile label="VWAP Edge">
               <span className={a.vwap_edge >= 0 ? 'text-up' : 'text-down'}>{signed(a.vwap_edge)}</span>
+            </Tile>
+            <Tile label="Fut Theo Prem">
+              <span className="text-slate-300">{n(a.fut_theo_premium)}</span>
             </Tile>
             <Tile label="Fut FV Edge">
               <span className={a.fut_fv_edge >= 0 ? 'text-up' : 'text-down'}>
@@ -240,6 +269,7 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
       )}
 
       {/* ============ CASH MARKET ============ */}
+      {tab === 'cash' && (
       <Section title="Cash Market" tag="Buy / Sell">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           <Tile label="LTP">
@@ -271,6 +301,9 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           <Tile label="Cumulative Flow">
             <span className={c.cum_flow >= 0 ? 'text-up' : 'text-down'}>{signed(c.cum_flow)}</span>
           </Tile>
+          <Tile label="Last Traded Qty">
+            <span className="text-slate-300">{oi(c.last_qty)}</span>
+          </Tile>
         </div>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -301,12 +334,17 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           <Micro depth={c.depth} />
         </div>
       </Section>
+      )}
 
       {/* ============ FUTURES ============ */}
+      {tab === 'futures' && (
       <Section title="Futures" tag="Long / Short">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           <Tile label="Fut LTP">
             <span className="text-slate-300">₹{n(f.ltp)}</span>
+          </Tile>
+          <Tile label="Fut ATP">
+            <span className="text-slate-300">{n(f.atp)}</span>
           </Tile>
           <Tile label="OI">
             <span className="text-slate-300">{oi(f.oi)}</span>
@@ -384,8 +422,10 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           </div>
         )}
       </Section>
+      )}
 
       {/* ============ OPTIONS ============ */}
+      {tab === 'options' && (
       <Section title="Options" tag={`CE / PE · exp ${(o.expiries ?? []).join(' · ')}`}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           <Tile label="PCR">
@@ -540,6 +580,7 @@ export default function LiveTerminal({ live }: { live: LiveState | null }) {
           </p>
         )}
       </Section>
+      )}
     </div>
   )
 }

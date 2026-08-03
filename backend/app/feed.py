@@ -212,6 +212,8 @@ class RealFeed:
                     spot = cq.get("last_price", 0) or 0
                     ohlc = cq.get("ohlc") or {}
                     prev_close = ohlc.get("close", spot) or spot
+                    bid_px = (cq.get("depth", {}).get("buy") or [{}])[0].get("price", spot) or spot
+                    ask_px = (cq.get("depth", {}).get("sell") or [{}])[0].get("price", spot) or spot
                     d_price = 0 if prev_spot is None else spot - prev_spot
                     prev_spot = spot
                     vol_now = int(cq.get("volume") or 0)
@@ -246,9 +248,9 @@ class RealFeed:
                             "low": ohlc.get("low", 0), "volume": vol_now,
                             "buy_qty": bq, "sell_qty": sq,
                             "buy_pct": round(bq / (bq + sq) * 100, 1) if bq + sq else 50,
-                            "bid": (cq.get("depth", {}).get("buy") or [{}])[0].get("price", spot),
-                            "ask": (cq.get("depth", {}).get("sell") or [{}])[0].get("price", spot),
-                            "spread": 0.0,
+                            "bid": bid_px,
+                            "ask": ask_px,
+                            "spread": round(abs(ask_px - bid_px), 2),
                             "upper_circuit": cq.get("upper_circuit_limit", 0),
                             "lower_circuit": cq.get("lower_circuit_limit", 0),
                             "cum_flow": cum_flow, "depth": _depth_from(cq),
