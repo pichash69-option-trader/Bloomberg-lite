@@ -153,6 +153,7 @@ async def market():
         "nifty": idx_val(13), "vix": idx_val(21),
         "breadth": {"advances": adv, "declines": dec, "unchanged": unch},
         "gainers": movers[:6], "losers": list(reversed(movers[-6:])),
+        "all": movers,
     }
 
 
