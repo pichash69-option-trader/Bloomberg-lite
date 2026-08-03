@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getJSON, type Health, type Universe } from './api'
 import LiveTerminal from './components/LiveTerminal'
 import WatchlistGrid from './components/WatchlistGrid'
-import MoversBar from './components/MoversBar'
+import MarketBar from './components/MarketBar'
 import { useLive } from './hooks/useLive'
 
 type Alert = {
@@ -302,8 +302,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Movers strip */}
-      <MoversBar onSelect={setSelected} />
+      {/* Market context strip — NIFTY · India VIX · breadth · live movers */}
+      <MarketBar onSelect={setSelected} />
 
       {/* Main panel (full width) */}
       <main className="min-h-0 flex-1 overflow-y-auto p-6">

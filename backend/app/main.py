@@ -5,6 +5,7 @@ main.py — FastAPI app entrypoint.
 Phase 0: /health (db + redis reachability) + /universe. Routers for history,
 live (WS), instruments, and option-chain are added in later phases.
 """
+import asyncio
 import json
 import sys
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from app.chain import build_chain
 from app.config import UNIVERSE, get_settings
 from app.dhan_config import has_creds
 from app.dhan_config import mode as data_mode
-from app.models import Candle, MetricSnapshot
+from app.models import Candle, Instrument, MetricSnapshot
 
 
 def _feed():
@@ -189,6 +190,58 @@ async def movers(limit: int = 6):
 async def chain(symbol: str = Query(...)):
     """Option chain + PCR + max-pain + greeks for one underlying (mock for now)."""
     return await build_chain(symbol)
+
+
+@app.get("/market")
+async def market():
+    """Market context: India VIX, NIFTY, breadth (adv/dec), live movers.
+
+    One bulk quote for all 50 stocks + NIFTY(13) + India VIX(21). Real only."""
+    if not has_creds():
+        return {"available": False}
+    from app.dhan_config import get_dhan
+
+    async with db.SessionLocal() as session:
+        rows = await session.execute(
+            select(Instrument).where(Instrument.kind == "spot",
+                                     Instrument.segment == "NSE_EQ"))
+        stocks = list(rows.scalars())
+    idmap = {str(s.security_id): s.symbol for s in stocks}
+
+    try:
+        q = await asyncio.to_thread(
+            get_dhan().quote_data,
+            securities={"NSE_EQ": [s.security_id for s in stocks], "IDX_I": [13, 21]})
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+    qd = (q.get("data") or {}).get("data") or q.get("data") or {}
+    eq = qd.get("NSE_EQ", {})
+    idx = qd.get("IDX_I", {})
+
+    def chg(d):
+        ltp = d.get("last_price", 0) or 0
+        pc = (d.get("ohlc") or {}).get("close", ltp) or ltp
+        return ltp, round((ltp - pc) / pc * 100, 2) if pc else 0.0
+
+    movers, adv, dec, unch = [], 0, 0, 0
+    for sid, d in eq.items():
+        ltp, c = chg(d)
+        adv += c > 0.05
+        dec += c < -0.05
+        unch += -0.05 <= c <= 0.05
+        movers.append({"symbol": idmap.get(sid, sid), "ltp": round(ltp, 2), "chg_pct": c})
+    movers.sort(key=lambda x: x["chg_pct"], reverse=True)
+
+    def idx_val(i):
+        ltp, c = chg(idx.get(str(i), {}))
+        return {"ltp": round(ltp, 2), "chg_pct": c}
+
+    return {
+        "available": True,
+        "nifty": idx_val(13), "vix": idx_val(21),
+        "breadth": {"advances": adv, "declines": dec, "unchanged": unch},
+        "gainers": movers[:6], "losers": list(reversed(movers[-6:])),
+    }
 
 
 @app.get("/snapshot")
