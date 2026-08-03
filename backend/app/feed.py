@@ -16,15 +16,41 @@ from sqlalchemy import select
 
 from app.dhan_config import get_dhan
 from app.db import SessionLocal
+from app.feed_ws import FULL, NSE_FNO, ws
 from app.greeks import greeks as bs_greeks
 from app.live_math import classify_buildup
 from app.mock_feed import _beta, _daily_stats
 from app.models import Instrument
 from app.redis_store import get_redis
 
-TICK_SEC = 3.0
+TICK_SEC = 1.0            # push cadence; WS drives sub-second cash/futures
 RISK_FREE = 0.065
 N_STRIKES = 8
+WS_SEG = {"NSE_EQ": 1}    # our segment -> dhanhq WS code (index via REST)
+
+
+def _ws_quote(tick: dict) -> dict:
+    """Convert a WS Full tick into the same shape as a REST quote row."""
+    depth = tick.get("depth") or []
+    return {
+        "last_price": float(tick.get("LTP") or 0),
+        "last_quantity": tick.get("LTQ", 0),
+        "average_price": float(tick.get("avg_price") or 0),
+        "volume": int(tick.get("volume") or 0),
+        "buy_quantity": int(tick.get("total_buy_quantity") or 0),
+        "sell_quantity": int(tick.get("total_sell_quantity") or 0),
+        "oi": int(tick.get("OI") or 0),
+        "oi_day_high": int(tick.get("oi_day_high") or 0),
+        "oi_day_low": int(tick.get("oi_day_low") or 0),
+        "ohlc": {"open": float(tick.get("open") or 0), "high": float(tick.get("high") or 0),
+                 "low": float(tick.get("low") or 0), "close": float(tick.get("close") or 0)},
+        "depth": {
+            "buy": [{"price": float(l.get("bid_price") or 0), "quantity": l.get("bid_quantity", 0),
+                     "orders": l.get("bid_orders", 0)} for l in depth],
+            "sell": [{"price": float(l.get("ask_price") or 0), "quantity": l.get("ask_quantity", 0),
+                      "orders": l.get("ask_orders", 0)} for l in depth],
+        },
+    }
 
 
 async def _legs(symbol: str):
@@ -156,19 +182,55 @@ class RealFeed:
         except Exception:
             expiry = None
 
+        # WS subscribe (sub-second cash + futures)
+        ws_pairs = []
+        if spot_i.segment in WS_SEG:
+            ws_pairs.append((WS_SEG[spot_i.segment], str(spot_i.security_id), FULL))
+        if fut_i:
+            ws_pairs.append((NSE_FNO, str(fut_i.security_id), FULL))
+        if ws_pairs:
+            ws.subscribe(ws_pairs)
+
         prev_spot = None
         prev_fut_oi = None
         cum_flow = 0
+        circuit = {"u": 0, "l": 0}
+        last_cq: dict = {}
+        last_fq: dict = {}
+        opt: dict = {}
+        i = 0
         try:
             while True:
                 try:
-                    secs = {spot_i.segment: [spot_i.security_id]}
-                    if fut_i:
-                        secs.setdefault("NSE_FNO", []).append(fut_i.security_id)
-                    qr = await asyncio.to_thread(dhan.quote_data, securities=secs)
-                    qd = (qr.get("data") or {}).get("data") or qr.get("data") or {}
-                    cq = qd.get(spot_i.segment, {}).get(str(spot_i.security_id), {})
-                    fq = qd.get("NSE_FNO", {}).get(str(fut_i.security_id), {}) if fut_i else {}
+                    i += 1
+                    # every 3s: REST fallback quote + circuit + option chain (rate-limit safe)
+                    if i % 3 == 1:
+                        secs = {spot_i.segment: [spot_i.security_id]}
+                        if fut_i:
+                            secs.setdefault("NSE_FNO", []).append(fut_i.security_id)
+                        qr = await asyncio.to_thread(dhan.quote_data, securities=secs)
+                        qd = (qr.get("data") or {}).get("data") or qr.get("data") or {}
+                        last_cq = qd.get(spot_i.segment, {}).get(str(spot_i.security_id), {}) or last_cq
+                        last_fq = (qd.get("NSE_FNO", {}).get(str(fut_i.security_id), {})
+                                   if fut_i else {}) or last_fq
+                        circuit = {"u": last_cq.get("upper_circuit_limit", 0),
+                                   "l": last_cq.get("lower_circuit_limit", 0)}
+                        if expiry:
+                            oc_r = await asyncio.to_thread(
+                                dhan.option_chain, under_security_id=spot_i.security_id,
+                                under_exchange_segment=spot_i.segment, expiry=expiry)
+                            ocd = (oc_r.get("data") or {}).get("data") or oc_r.get("data") or {}
+                            oc = ocd.get("oc") or {}
+                            u_spot = ocd.get("last_price") or last_cq.get("last_price", 0)
+                            opt = _build_options(oc, u_spot, expiry)
+
+                    # sub-second overlay from WS (fallback to last REST)
+                    we = ws.get(spot_i.security_id)
+                    wf = ws.get(fut_i.security_id) if fut_i else None
+                    cq = _ws_quote(we) if we else dict(last_cq)
+                    cq["upper_circuit_limit"] = circuit["u"]
+                    cq["lower_circuit_limit"] = circuit["l"]
+                    fq = _ws_quote(wf) if wf else dict(last_fq)
 
                     spot = cq.get("last_price", 0) or 0
                     ohlc = cq.get("ohlc") or {}
@@ -179,17 +241,6 @@ class RealFeed:
                     cum_flow += vol_now if d_price >= 0 else -vol_now
                     bq = int(cq.get("buy_quantity") or 0)
                     sq = int(cq.get("sell_quantity") or 1)
-
-                    # options
-                    opt = {}
-                    if expiry:
-                        oc_r = await asyncio.to_thread(
-                            dhan.option_chain, under_security_id=spot_i.security_id,
-                            under_exchange_segment=spot_i.segment, expiry=expiry)
-                        ocd = (oc_r.get("data") or {}).get("data") or oc_r.get("data") or {}
-                        oc = ocd.get("oc") or {}
-                        u_spot = ocd.get("last_price") or spot
-                        opt = _build_options(oc, u_spot, expiry)
 
                     fut_ltp = fq.get("last_price", spot) or spot
                     fut_oi = int(fq.get("oi") or 0)
@@ -275,6 +326,9 @@ class RealFeed:
                 await asyncio.sleep(TICK_SEC)
         except asyncio.CancelledError:
             pass
+        finally:
+            if ws_pairs:
+                ws.unsubscribe(ws_pairs)
 
 
 feed = RealFeed()
