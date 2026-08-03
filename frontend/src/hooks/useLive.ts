@@ -3,7 +3,7 @@ import { WS_URL, type LiveState } from '../api'
 
 /**
  * Subscribe to the live-math stream for `symbol`. The backend starts/stops the
- * (mock or real) feed per subscriber and pushes the full Cash/Futures/Options
+ * live DhanHQ feed per subscriber and pushes the full Cash/Futures/Options
  * payload every ~1.5s. Returns the latest state, or null while connecting.
  */
 export function useLive(symbol: string | null): LiveState | null {

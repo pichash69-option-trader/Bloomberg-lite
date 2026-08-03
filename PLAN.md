@@ -2,8 +2,7 @@
 
 Single-purpose terminal: **ek stock → har ~1.5s → live math → outputs**, teeno
 segments — **Cash · Futures · Options**. Sab **pure math / statistics** (educational,
-trading advice nahi). Ek hi payload contract mock aur real dono use karte — creds
-daalte hi seamless swap.
+trading advice nahi). **Data 100% real DhanHQ** — creds `.env` mein; sab kuch live market se.
 
 ---
 
@@ -78,49 +77,40 @@ strike subscribe nahi). Rate-limit safe.
 
 ---
 
-## 4. Build phases (verify-able)
+## 4. Build status — ✅ done (100% real DhanHQ data)
 
-### R0 — Full schema + UI (mock, **abhi**, bina creds) 🟢
-- `greeks.py` → Rho (already computed per-leg)
-- Payload poora expand (upar schema); `mock_feed` sab fields generate kare
-- `LiveTerminal` UI expand: **depth ladder**, circuit, ATP, multi-expiry futures,
-  IV-skew, net-greeks, per-strike chg-OI/buildup/bid-ask/Rho
-- *Verify: mock pe poora rich terminal*
+- **Instruments + history:** scrip-master → SecurityId map; real daily history backfill → `candles`.
+- **Live feed:** `feed_ws.py` (WebSocket Full) drives sub-second cash + futures; options +
+  circuit via option-chain/quote REST (3s). Redis → WS `/ws/live`.
+- **Full outputs:** depth ladders, circuit, ATP, multi-expiry, IV-skew, net-greeks, chg-OI chain,
+  OI walls, IV rank, Rho; analytics (expected-move/CI, z-score, beta, realised-vs-implied vol,
+  VWAP / futures fair-value edge); order-flow & micro-price; buildup timeline.
+- **Market context:** India VIX, breadth, movers heatmap (bulk quote, last-good cache).
+- **Robustness:** WS auto-reconnect; token-expiry banner.
 
-### R1 — Real REST (creds, market-hours nahi chahiye) 🟡
-- `dhan_config.get_dhan()` (ready)
-- Real **option-chain** (`dhan.option_chain` + `expiry_list`) → map to shape, fallback mock
-- Real **quote snapshot** (`dhan.quote_data`) cash+futures — off-market bhi last snapshot
-- Auto-switch: creds ho → real, warna mock
-- *Verify: asli PCR/greeks/IV + last quote (raat ko bhi)*
-
-### R2 — Real WebSocket feed (creds + market-hours) 🟡
-- `feed.py`: DhanHQ **MarketFeed(Full)** — equity + near future, background thread → Redis
-- `live_manager`: select pe subscribe / swap pe unsubscribe
-- Reconnect + token-expiry handling
-- *Verify: market-hours mein asli live ticks*
-
-### R3 — Extras (full ka full) 🟡
-- Multi-expiry chain (near+next) · **20-level depth** · near-ATM option strikes WS pe live ·
-  real **historical backfill**
+### Optional extras (future)
+- Multi-expiry chain (near+next) · 20-level depth · near-ATM option strikes on WS · real
+  futures/options OI history.
 
 ---
 
 ## 5. Files
 ```
 backend/app/
-  dhan_config.py   creds + client + has_creds()/mode()    [ready]
-  greeks.py        Black-Scholes + Δ Γ Θ Vega Rho          [ready]
-  chain.py         synth_chain (mock) / build_real_chain (R1)
-  live_math.py     buildup + derived (skew, net-greeks)
-  mock_feed.py     synthetic full payload  (R0)
-  feed.py          real DhanHQ MarketFeed → Redis          (R2)
-  live_manager.py  subscribe/unsubscribe on select         (R2)
-  main.py          WS /ws/live + REST
+  dhan_config.py   creds + client + has_creds() / mode()
+  greeks.py        Black-Scholes + Δ Γ Θ Vega Rho
+  live_math.py     buildup classify + chain metrics (PCR/max-pain/skew/net-greeks)
+  feed.py          live feed → payload → Redis (WS ticks + option-chain REST)
+  feed_ws.py       DhanHQ WebSocket (Full) manager → sub-second ticks
+  history.py       real daily history backfill → candles
+  instruments.py   scrip-master → SecurityId map
+  main.py          REST (/health /universe /market) + WS /ws/live
 frontend/src/
-  components/LiveTerminal.tsx   Cash/Futures/Options full UI
+  components/LiveTerminal.tsx   Cash/Futures/Options full UI (tabs)
+  components/MoversPanel.tsx    NIFTY-50 heatmap
+  components/MarketIndices.tsx  NIFTY · India VIX · breadth
   hooks/useLive.ts             WS client → LiveState
-  App.tsx                      picker + live view
+  App.tsx                      tabs + live view
 ```
 
 ---

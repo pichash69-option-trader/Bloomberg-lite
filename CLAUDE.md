@@ -99,22 +99,18 @@ Bloomberg-lite/
 ├─ docs/                     # v1 reference plan-docs (ARCHITECTURE/LIVE_DATA/GUIDE/PLAN)
 ├─ backend/
 │  ├─ app/
-│  │  ├─ main.py             # FastAPI app · REST + WS endpoints · lifespan
-│  │  ├─ config.py           # settings + NIFTY50 universe (index + 50 stocks)
-│  │  ├─ dhan_config.py      # DhanContext (client_id, access_token from .env)
+│  │  ├─ main.py             # FastAPI · REST (/health /universe /market) + WS · lifespan
+│  │  ├─ config.py           # settings + NIFTY 50 universe (index + 50 stocks)
+│  │  ├─ dhan_config.py      # DhanContext (creds from .env) + has_creds / mode
 │  │  ├─ db.py               # SQLAlchemy async engine/session + Timescale setup
-│  │  ├─ models.py           # ORM: candles, snapshots, instruments
+│  │  ├─ models.py           # ORM: instruments, candles
 │  │  ├─ redis_store.py      # live state read/write + pub/sub
-│  │  ├─ instruments.py      # scrip-master CSV → DB (symbol→security_id, all types)
-│  │  ├─ history.py          # DhanHQ historical (daily backfill + intraday on-demand)
-│  │  ├─ feed.py             # MarketFeed (Full) wrapper → redis_store
-│  │  ├─ live_manager.py     # subscribe/unsubscribe on stock select
-│  │  ├─ chain.py            # option_chain + expiry REST poller (selected, 3s)
-│  │  ├─ calc.py             # premium, OI buildup, movers, PCR, max-pain
-│  │  ├─ greeks.py           # optional BS/IV verify + Rho
-│  │  ├─ snapshot_job.py     # daily EOD snapshot of derived metrics → Postgres
-│  │  ├─ mock_feed.py        # off-market / no-token synthetic feed (dev + verify)
-│  │  └─ routers/            # history · live(ws) · instruments · chain
+│  │  ├─ instruments.py      # scrip-master CSV → DB (symbol → security_id)
+│  │  ├─ history.py          # DhanHQ historical daily backfill → candles
+│  │  ├─ feed.py             # live feed → payload → Redis (WS ticks + option-chain REST)
+│  │  ├─ feed_ws.py          # DhanHQ WebSocket (Full) manager → sub-second ticks
+│  │  ├─ live_math.py        # buildup classify + chain metrics (PCR/max-pain/greeks)
+│  │  └─ greeks.py           # Black-Scholes price + Δ/Γ/Θ/Vega/Rho
 │  ├─ requirements.txt  .env.example  Dockerfile
 ├─ frontend/
 │  ├─ package.json vite.config.ts tsconfig.json tailwind.config.js index.html Dockerfile
@@ -183,7 +179,7 @@ channel  live:{symbol}       → pub/sub, backend WS fanout to UI
 - Windows console **cp1252** emoji crash → `sys.stdout.reconfigure(encoding="utf-8")`.
 - numpy scalar DB mein BLOB → native `int()/float()` cast.
 - Live throughput → har tick pe recompute mat karo; throttle (1s), vectorized.
-- Market-hours only live (9:15–15:30 IST); baaki last-snapshot / history. Off-market dev = `mock_feed`.
+- Market-hours only live (9:15–15:30 IST); baaki last-snapshot / history. No creds = no live data (token banner).
 - Secrets (`.env`) kabhi commit nahi — `.gitignore` mein.
 
 ## 10. Build phases (chhote, verify-able steps)
@@ -192,10 +188,9 @@ channel  live:{symbol}       → pub/sub, backend WS fanout to UI
   backend FastAPI skeleton · frontend Vite React-TS skeleton · `config.py` (NIFTY50) ·
   `.gitignore` · `.env.example`. *Verify: `docker compose up` → services healthy, FastAPI `/health` OK, Vite page loads.*
 - **Phase 1 — Instruments + history:** scrip-master → `instruments` table; DhanHQ historical
-  backfill (daily, all 51) → `candles`; REST `/history`; frontend candle chart.
-  *(mock/replay agar token nahi.)*
-- **Phase 2 — Live (selected):** `feed` + `live_manager` + Redis + WS `/ws/live`; frontend
-  live panel auto-update. `mock_feed` se off-market verify.
+  backfill (daily, all 51) → `candles`.
+- **Phase 2 — Live (selected):** `feed` + `feed_ws` (WebSocket Full) + Redis + WS `/ws/live`;
+  frontend live panel auto-update (sub-second cash/futures, 3s options).
 - **Phase 3 — Option chain:** `chain` poller (3s) → PCR/max-pain/greeks; chain table + tiles.
 - **Phase 4 — Calc + snapshot:** premium/buildup/movers + daily snapshot job (metric history).
 - **Phase 5 — Analytics:** options payoff builder, risk (VaR/Sortino/position-size/charges STT+GST).
