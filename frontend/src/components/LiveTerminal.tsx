@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON, type DepthLevel, type LiveState, type OptDepth } from '../api'
-import MoversPanel from './MoversPanel'
 
 function n(v: number | undefined, d = 2): string {
   return (v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
@@ -155,10 +154,10 @@ function Micro({ depth }: { depth: DepthLevel[] }) {
 
 export default function LiveTerminal({
   live,
-  onSelect,
+  tab,
 }: {
   live: LiveState | null
-  onSelect: (s: string) => void
+  tab: 'analytics' | 'cash' | 'futures' | 'options'
 }) {
   const [depthStrike, setDepthStrike] = useState<number | null>(null)
   const depthQ = useQuery({
@@ -185,8 +184,6 @@ export default function LiveTerminal({
     )
   }, [live?.symbol, live?.futures.buildup])
 
-  const [tab, setTab] = useState<'movers' | 'analytics' | 'cash' | 'futures' | 'options'>('cash')
-
   if (!live) return <div className="mt-6 text-sm text-slate-500">live feed connect ho raha…</div>
   const { cash: c, futures: f, options: o, analytics: a } = live
   const up = c.chg >= 0
@@ -195,43 +192,8 @@ export default function LiveTerminal({
   const zAbs = Math.abs(a?.z_score ?? 0)
   const zCls = zAbs >= 2 ? 'text-down' : zAbs >= 1 ? 'text-yellow-400' : 'text-slate-300'
 
-  const TABS = [
-    { key: 'movers', label: 'Movers' },
-    { key: 'analytics', label: 'Analytics' },
-    { key: 'cash', label: 'Cash' },
-    { key: 'futures', label: 'Futures' },
-    { key: 'options', label: 'Options' },
-  ] as const
-
   return (
     <div>
-      {/* Tab bar */}
-      <div className="mb-1 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
-              tab === t.key
-                ? 'border-indigo text-indigo'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ============ MOVERS ============ */}
-      {tab === 'movers' && (
-        <MoversPanel
-          onSelect={(s) => {
-            onSelect(s)
-            setTab('cash')
-          }}
-        />
-      )}
-
       {/* ============ ANALYTICS ============ */}
       {tab === 'analytics' && a && (
         <Section title="Analytics" tag="fair-value · stats · Quant Bible §2-3, §6">

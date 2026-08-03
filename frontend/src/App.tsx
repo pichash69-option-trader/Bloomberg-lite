@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJSON, type Health, type Universe } from './api'
+import { getJSON, type Health } from './api'
 import LiveTerminal from './components/LiveTerminal'
-import WatchlistGrid from './components/WatchlistGrid'
+import MoversPanel from './components/MoversPanel'
 import MarketIndices from './components/MarketIndices'
 import { useLive } from './hooks/useLive'
 
@@ -16,6 +16,15 @@ type Alert = {
   at?: string
 }
 
+type TabKey = 'movers' | 'analytics' | 'cash' | 'futures' | 'options'
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'movers', label: 'Movers' },
+  { key: 'analytics', label: 'Analytics' },
+  { key: 'cash', label: 'Cash' },
+  { key: 'futures', label: 'Futures' },
+  { key: 'options', label: 'Options' },
+]
+
 function Dot({ ok }: { ok: boolean }) {
   return (
     <span
@@ -27,7 +36,7 @@ function Dot({ ok }: { ok: boolean }) {
 
 export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<TabKey>('movers')
   const [watchOpen, setWatchOpen] = useState(false)
   const [watch, setWatch] = useState<string[]>(() => {
     try {
@@ -46,10 +55,6 @@ export default function App() {
     queryKey: ['health'],
     queryFn: () => getJSON<Health>('/health'),
     refetchInterval: 5000,
-  })
-  const uni = useQuery({
-    queryKey: ['universe'],
-    queryFn: () => getJSON<Universe>('/universe'),
   })
   const live = useLive(selected)
 
@@ -92,13 +97,9 @@ export default function App() {
   const [aOp, setAOp] = useState<'>' | '<'>('>')
   const [aVal, setAVal] = useState(0)
 
-  const all = uni.data?.underlyings ?? []
-  const q = search.trim().toLowerCase()
-  const matches = q ? all.filter((s) => s.toLowerCase().includes(q)).slice(0, 12) : []
-
   const pick = (s: string) => {
     setSelected(s)
-    setSearch('')
+    setTab('cash')
     setWatchOpen(false)
   }
 
@@ -117,45 +118,6 @@ export default function App() {
             </div>
             <div className="text-[10px] text-slate-500">Cash · Futures · Options · ~1.5s</div>
           </div>
-        </div>
-
-        {/* Search (stock picker) */}
-        <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="🔍 Search stock… (NIFTY, RELIANCE…)"
-            className="w-full rounded border border-border bg-black/30 px-3 py-1.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-indigo"
-          />
-          {matches.length > 0 && (
-            <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-border bg-panel shadow-xl">
-              {matches.map((sym) => (
-                <div key={sym} className="flex items-center hover:bg-white/5">
-                  <button
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      toggleWatch(sym)
-                    }}
-                    className={`px-2 text-sm ${
-                      watch.includes(sym) ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'
-                    }`}
-                    title="watchlist"
-                  >
-                    {watch.includes(sym) ? '★' : '☆'}
-                  </button>
-                  <button
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      pick(sym)
-                    }}
-                    className="flex-1 px-2 py-1.5 text-left text-sm text-slate-200"
-                  >
-                    {sym}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Watchlist tab */}
@@ -316,48 +278,54 @@ export default function App() {
         </div>
       )}
 
+      {/* Tab bar — always visible */}
+      <div className="flex items-center gap-1 border-b border-border bg-panel/40 px-4">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+              tab === t.key
+                ? 'border-indigo text-indigo'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+        {selected && (
+          <span className="ml-auto flex items-center gap-1.5 pr-1 text-sm">
+            <span className="text-[11px] uppercase tracking-wider text-slate-500">Stock</span>
+            <span className="font-semibold text-slate-200">{selected}</span>
+            <button
+              onClick={() => toggleWatch(selected)}
+              className={watch.includes(selected) ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'}
+              title="watchlist"
+            >
+              {watch.includes(selected) ? '★' : '☆'}
+            </button>
+            {live && (
+              <span className="ml-1 font-mono text-[11px] text-slate-600">
+                {live.ts.slice(11, 19)} UTC
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
       {/* Main panel (full width) */}
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        {selected ? (
-          <div>
-            <div className="flex items-baseline justify-between">
-              <h1 className="text-xl font-semibold">
-                {selected}
-                <button
-                  onClick={() => toggleWatch(selected)}
-                  className={`ml-2 align-middle text-base ${
-                    watch.includes(selected) ? 'text-yellow-400' : 'text-slate-600 hover:text-slate-400'
-                  }`}
-                  title="watchlist"
-                >
-                  {watch.includes(selected) ? '★' : '☆'}
-                </button>
-              </h1>
-              {live && (
-                <span className="font-mono text-[11px] text-slate-600">
-                  updated {live.ts.slice(11, 19)} UTC
-                </span>
-              )}
-            </div>
-            <LiveTerminal live={live} onSelect={setSelected} />
-          </div>
-        ) : watch.length > 0 ? (
-          <div>
-            <div className="mb-4 text-center">
-              <div className="text-2xl">⚡</div>
-              <div className="mt-1 text-sm text-slate-400">
-                Upar search se stock chuno, ya watchlist se tap karo
-              </div>
-            </div>
-            <WatchlistGrid symbols={watch} onSelect={setSelected} />
-          </div>
+        {tab === 'movers' ? (
+          <MoversPanel onSelect={pick} />
+        ) : selected && live ? (
+          <LiveTerminal live={live} tab={tab} />
         ) : (
-          <div className="grid h-full place-items-center text-center">
+          <div className="grid h-full place-items-center text-center text-slate-500">
             <div>
               <div className="text-2xl">⚡</div>
-              <div className="mt-2 text-slate-400">Upar search se ek stock chuno</div>
-              <div className="mt-1 text-xs text-slate-600">
-                Cash · Futures · Options — live math · backend {health.data?.status ?? '…'}
+              <div className="mt-2">
+                Movers tab se koi stock chuno — phir uska{' '}
+                <span className="text-indigo">{tab}</span> data yahan dikhega.
               </div>
             </div>
           </div>
