@@ -61,6 +61,7 @@ app.add_middleware(
 
 
 _auth_cache = {"ts": 0.0, "valid": None}
+_market_cache = {"data": None}   # last good /market snapshot (rate-limit fallback)
 
 
 async def _auth_valid():
@@ -124,11 +125,16 @@ async def market():
         q = await asyncio.to_thread(
             get_dhan().quote_data,
             securities={"NSE_EQ": [s.security_id for s in stocks], "IDX_I": [13, 21]})
-    except Exception as e:
-        return {"available": False, "error": str(e)}
+    except Exception:
+        q = {}
     qd = (q.get("data") or {}).get("data") or q.get("data") or {}
     eq = qd.get("NSE_EQ", {})
     idx = qd.get("IDX_I", {})
+
+    # quote_data (1 req/sec) sometimes returns empty when it collides with the
+    # live feed's polling — serve the last good snapshot instead of zeros.
+    if not eq:
+        return _market_cache["data"] or {"available": False}
 
     def chg(d):
         ltp = d.get("last_price", 0) or 0
@@ -148,13 +154,15 @@ async def market():
         ltp, c = chg(idx.get(str(i), {}))
         return {"ltp": round(ltp, 2), "chg_pct": c}
 
-    return {
+    result = {
         "available": True,
         "nifty": idx_val(13), "vix": idx_val(21),
         "breadth": {"advances": adv, "declines": dec, "unchanged": unch},
         "gainers": movers[:6], "losers": list(reversed(movers[-6:])),
         "all": movers,
     }
+    _market_cache["data"] = result
+    return result
 
 
 @app.get("/snapshot")
